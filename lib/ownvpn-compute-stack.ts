@@ -2,55 +2,17 @@ import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import { OwnvpnInfrastructureStack } from './ownvpn-infrastructure-stack';
 
-export class OwnvpnStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+export interface OwnvpnComputeStackProps extends cdk.StackProps {
+  infrastructureStack: OwnvpnInfrastructureStack;
+}
+
+export class OwnvpnComputeStack extends cdk.Stack {
+  constructor(scope: Construct, id: string, props: OwnvpnComputeStackProps) {
     super(scope, id, props);
 
-    // Create VPC with public subnet for VPN server
-    const vpc = new ec2.Vpc(this, 'WireGuardVPC', {
-      maxAzs: 1, // Single AZ for cost optimization
-      natGateways: 0, // No NAT gateway needed for public subnet
-      subnetConfiguration: [
-        {
-          cidrMask: 24,
-          name: 'Public',
-          subnetType: ec2.SubnetType.PUBLIC,
-        },
-      ],
-    });
-
-    // Security group for WireGuard VPN server
-    const vpnSecurityGroup = new ec2.SecurityGroup(this, 'WireGuardSecurityGroup', {
-      vpc,
-      description: 'Security group for WireGuard VPN server',
-      allowAllOutbound: true,
-    });
-
-    // Allow SSH access (port 22) for administration
-    vpnSecurityGroup.addIngressRule(
-      ec2.Peer.anyIpv4(),
-      ec2.Port.tcp(22),
-      'SSH access for server administration'
-    );
-
-    // Allow WireGuard VPN traffic (UDP 51820)
-    vpnSecurityGroup.addIngressRule(
-      ec2.Peer.anyIpv4(),
-      ec2.Port.udp(51820),
-      'WireGuard VPN traffic'
-    );
-
-    // Create IAM role for EC2 instance
-    const vpnServerRole = new iam.Role(this, 'WireGuardServerRole', {
-      assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
-      description: 'IAM role for WireGuard VPN server',
-    });
-
-    // Add CloudWatch agent permissions for monitoring
-    vpnServerRole.addManagedPolicy(
-      iam.ManagedPolicy.fromAwsManagedPolicyName('CloudWatchAgentServerPolicy')
-    );
+    const { infrastructureStack } = props;
 
     // Use Ubuntu 24.04 LTS AMI for eu-central-1
     const ubuntuAmi = ec2.MachineImage.fromSsmParameter(
@@ -59,13 +21,6 @@ export class OwnvpnStack extends cdk.Stack {
         os: ec2.OperatingSystemType.LINUX,
       }
     );
-
-    // Create key pair for SSH access
-    const keyPair = new ec2.KeyPair(this, 'WireGuardKeyPair', {
-      keyPairName: 'wireguard-vpn-key',
-      type: ec2.KeyPairType.RSA,
-      format: ec2.KeyPairFormat.PEM,
-    });
 
     // WireGuard server installation and configuration script
     const userDataScript = ec2.UserData.forLinux();
@@ -86,6 +41,7 @@ export class OwnvpnStack extends cdk.Stack {
       'ufw default allow outgoing',
       'ufw allow 22/tcp',
       'ufw allow 51820/udp',
+      'ufw route allow in on wg0 out on ens5',
       'ufw --force enable',
       '',
       '# Enable IP forwarding',
@@ -105,10 +61,10 @@ export class OwnvpnStack extends cdk.Stack {
       '# Create WireGuard server configuration',
       'printf "[Interface]\\n" > /etc/wireguard/wg0.conf',
       'printf "PrivateKey = \$(cat server_private_key)\\n" >> /etc/wireguard/wg0.conf',
-      'printf "Address = 10.0.0.1/24\\n" >> /etc/wireguard/wg0.conf',
+      'printf "Address = 10.8.0.1/24\\n" >> /etc/wireguard/wg0.conf',
       'printf "ListenPort = 51820\\n" >> /etc/wireguard/wg0.conf',
-      'printf "PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE\\n" >> /etc/wireguard/wg0.conf',
-      'printf "PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE\\n" >> /etc/wireguard/wg0.conf',
+      'printf "PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o ens5 -j MASQUERADE\\n" >> /etc/wireguard/wg0.conf',
+      'printf "PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o ens5 -j MASQUERADE\\n" >> /etc/wireguard/wg0.conf',
       '',
       '# Configure fail2ban for SSH protection',
       'cat > /etc/fail2ban/jail.local << \'EOF\'',
@@ -152,7 +108,7 @@ export class OwnvpnStack extends cdk.Stack {
       'printf "CLIENT_PRIVATE_KEY=\\$(cat client_private_key)\\n\\n" >> /etc/wireguard/add-client.sh',
       'printf "# Assign client IP (simple increment)\\n" >> /etc/wireguard/add-client.sh',
       'printf "CLIENT_COUNT=\\$(ls -1 /etc/wireguard/clients/ | wc -l)\\n" >> /etc/wireguard/add-client.sh',
-      'printf "CLIENT_IP=\\"10.0.0.\\$((CLIENT_COUNT + 1))\\"\\n\\n" >> /etc/wireguard/add-client.sh',
+      'printf "CLIENT_IP=\\"10.8.0.\\$((CLIENT_COUNT + 1))\\"\\n\\n" >> /etc/wireguard/add-client.sh',
       'printf "# Create client configuration\\n" >> /etc/wireguard/add-client.sh',
       'printf "cat > \\${CLIENT_NAME}.conf << CLIENTEOF\\n" >> /etc/wireguard/add-client.sh',
       'printf "[Interface]\\n" >> /etc/wireguard/add-client.sh',
@@ -205,12 +161,12 @@ export class OwnvpnStack extends cdk.Stack {
 
     // Create EC2 instance for VPN server
     const vpnServer = new ec2.Instance(this, 'WireGuardVPNServer', {
-      vpc,
+      vpc: infrastructureStack.vpc,
       instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MICRO),
       machineImage: ubuntuAmi,
-      securityGroup: vpnSecurityGroup,
-      keyPair: keyPair,
-      role: vpnServerRole,
+      securityGroup: infrastructureStack.securityGroup,
+      keyPair: infrastructureStack.keyPair,
+      role: infrastructureStack.serverRole,
       userData: userDataScript,
       vpcSubnets: {
         subnetType: ec2.SubnetType.PUBLIC,
@@ -235,18 +191,8 @@ export class OwnvpnStack extends cdk.Stack {
     });
 
     new cdk.CfnOutput(this, 'SSHCommand', {
-      value: `ssh -i ${keyPair.keyPairName}.pem ubuntu@${elasticIp.ref}`,
+      value: `ssh -i ${infrastructureStack.keyPair.keyPairName}.pem ubuntu@${elasticIp.ref}`,
       description: 'SSH command to connect to VPN server (after retrieving private key)',
-    });
-
-    new cdk.CfnOutput(this, 'GetPrivateKeyCommand', {
-      value: `aws ssm get-parameter --name /ec2/keypair/${keyPair.keyPairId} --with-decryption --query Parameter.Value --output text --region eu-central-1 > ${keyPair.keyPairName}.pem && chmod 600 ${keyPair.keyPairName}.pem`,
-      description: 'Command to retrieve the private key from AWS Systems Manager',
-    });
-
-    new cdk.CfnOutput(this, 'KeyPairId', {
-      value: keyPair.keyPairId,
-      description: 'EC2 Key Pair ID for Systems Manager parameter',
     });
 
     new cdk.CfnOutput(this, 'ClientConfigLocation', {

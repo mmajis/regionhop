@@ -1,0 +1,11 @@
+{
+  "availability-zones:account=091870417636:region=eu-central-1": [
+    "eu-central-1a",
+    "eu-central-1b",
+    "eu-central-1c"
+  ],
+  "acknowledged-issue-numbers": [
+    34892,
+    34892
+  ]
+}
