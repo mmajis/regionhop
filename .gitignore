@@ -6,7 +6,9 @@ node_modules
 # CDK asset staging directory
 .cdk.staging
 cdk.out
+cdk.out.2
 
 wireguard-vpn-key.pem
 macos-client.conf
-client-configs/
+client-configs
+*.pem

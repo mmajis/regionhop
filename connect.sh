@@ -117,7 +117,7 @@ get_client_config() {
     fi
     
     mkdir -p client-configs
-    local config_file="client/configs/macos-client-${region}.conf"
+    local config_file="client-configs/macos-client-${region}.conf"
     
     print_status "Retrieving client configuration from $region..."
     ssh -i "$key_file" ubuntu@"$server_ip" \
@@ -221,7 +221,7 @@ add_client_to_region() {
         print_success "Client $client_name added successfully to region $region"
         print_status "Downloading client configuration..."
         
-        local config_file="${client_name}-${region}.conf"
+        local config_file="client-configs/${client_name}-${region}.conf"
         ssh -i "$key_file" ubuntu@"$server_ip" \
             "sudo cat /etc/wireguard/clients/$client_name/$client_name.conf" > "$config_file"
         
