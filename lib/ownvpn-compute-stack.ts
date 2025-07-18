@@ -172,7 +172,7 @@ export class OwnvpnComputeStack extends cdk.Stack {
     // Create EC2 instance for VPN server
     const vpnServer = new ec2.Instance(this, 'WireGuardVPNServer', {
       vpc: infrastructureStack.vpc,
-      instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MICRO),
+      instanceType: ec2.InstanceType.of(ec2.InstanceClass.T4G, ec2.InstanceSize.NANO),
       machineImage: ubuntuAmi,
       securityGroup: infrastructureStack.securityGroup,
       keyPair: infrastructureStack.keyPair,
