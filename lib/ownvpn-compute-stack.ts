@@ -2,6 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as autoscaling from 'aws-cdk-lib/aws-autoscaling';
 import { OwnvpnInfrastructureStack } from './ownvpn-infrastructure-stack';
 import { getVpnSubnet, getVpnPort } from './region-config';
 
@@ -169,15 +170,28 @@ export class OwnvpnComputeStack extends cdk.Stack {
       'echo "Client configuration available at: /etc/wireguard/clients/macos-client/"',
     );
 
-    // Create EC2 instance for VPN server
-    const vpnServer = new ec2.Instance(this, 'WireGuardVPNServer', {
-      vpc: infrastructureStack.vpc,
+    // Create Launch Template for spot instances
+    const launchTemplate = new ec2.LaunchTemplate(this, 'WireGuardLaunchTemplate', {
       instanceType: ec2.InstanceType.of(ec2.InstanceClass.T4G, ec2.InstanceSize.NANO),
       machineImage: ubuntuAmi,
       securityGroup: infrastructureStack.securityGroup,
       keyPair: infrastructureStack.keyPair,
       role: infrastructureStack.serverRole,
       userData: userDataScript,
+      spotOptions: {
+        requestType: ec2.SpotRequestType.PERSISTENT,
+        // Set a reasonable spot price limit (optional - if not set, uses on-demand price as max)
+        //maxPrice: 0.01, // $0.01 per hour - adjust as needed
+      },
+    });
+
+    // Create Auto Scaling Group for spot instances
+    const autoScalingGroup = new autoscaling.AutoScalingGroup(this, 'WireGuardAutoScalingGroup', {
+      vpc: infrastructureStack.vpc,
+      launchTemplate: launchTemplate,
+      minCapacity: 1,
+      maxCapacity: 1,
+      desiredCapacity: 1,
       vpcSubnets: {
         subnetType: ec2.SubnetType.PUBLIC,
       },
@@ -186,7 +200,6 @@ export class OwnvpnComputeStack extends cdk.Stack {
     // Create Elastic IP for static endpoint
     const elasticIp = new ec2.CfnEIP(this, 'WireGuardElasticIP', {
       domain: 'vpc',
-      instanceId: vpnServer.instanceId,
     });
 
     // Output important information
@@ -195,14 +208,24 @@ export class OwnvpnComputeStack extends cdk.Stack {
       description: `WireGuard VPN Server Public IP - ${targetRegion}`,
     });
 
-    new cdk.CfnOutput(this, 'VPNServerInstanceId', {
-      value: vpnServer.instanceId,
-      description: `VPN Server EC2 Instance ID - ${targetRegion}`,
+    new cdk.CfnOutput(this, 'VPNServerAutoScalingGroup', {
+      value: autoScalingGroup.autoScalingGroupName,
+      description: `VPN Server Auto Scaling Group Name - ${targetRegion}`,
     });
 
     new cdk.CfnOutput(this, 'SSHCommand', {
       value: `ssh -i ${infrastructureStack.keyPair.keyPairName}.pem ubuntu@${elasticIp.ref}`,
       description: 'SSH command to connect to VPN server (after retrieving private key)',
+    });
+
+    new cdk.CfnOutput(this, 'SpotInstanceNote', {
+      value: 'This VPN server runs on spot instances for cost savings. The instance may be terminated and replaced by AWS.',
+      description: 'Important note about spot instances',
+    });
+
+    new cdk.CfnOutput(this, 'EIPAssociationNote', {
+      value: 'The Elastic IP must be manually associated with the current instance in the Auto Scaling Group after deployment.',
+      description: 'Manual step required for EIP association',
     });
 
     new cdk.CfnOutput(this, 'ClientConfigLocation', {
