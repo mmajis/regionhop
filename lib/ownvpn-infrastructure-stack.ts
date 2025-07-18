@@ -2,6 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import { getExportName, getResourceName } from './region-config';
 
 export class OwnvpnInfrastructureStack extends cdk.Stack {
   public readonly vpc: ec2.Vpc;
@@ -11,6 +12,9 @@ export class OwnvpnInfrastructureStack extends cdk.Stack {
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
+
+    // Get the target region from the stack's environment
+    const targetRegion = this.region;
 
     // Create VPC with public subnet for VPN server
     this.vpc = new ec2.Vpc(this, 'WireGuardVPC', {
@@ -28,8 +32,9 @@ export class OwnvpnInfrastructureStack extends cdk.Stack {
     // Security group for WireGuard VPN server
     this.securityGroup = new ec2.SecurityGroup(this, 'WireGuardSecurityGroup', {
       vpc: this.vpc,
-      description: 'Security group for WireGuard VPN server',
+      description: `Security group for WireGuard VPN server - ${targetRegion}`,
       allowAllOutbound: true,
+      securityGroupName: getResourceName('WireGuard', targetRegion) + '-SG',
     });
 
     // Allow SSH access (port 22) for administration
@@ -49,7 +54,7 @@ export class OwnvpnInfrastructureStack extends cdk.Stack {
     // Create IAM role for EC2 instance
     this.serverRole = new iam.Role(this, 'WireGuardServerRole', {
       assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
-      description: 'IAM role for WireGuard VPN server',
+      description: `IAM role for WireGuard VPN server - ${targetRegion}`,
     });
 
     // Add CloudWatch agent permissions for monitoring
@@ -59,7 +64,7 @@ export class OwnvpnInfrastructureStack extends cdk.Stack {
 
     // Create key pair for SSH access
     this.keyPair = new ec2.KeyPair(this, 'WireGuardKeyPair', {
-      keyPairName: 'wireguard-vpn-key',
+      keyPairName: getResourceName('wireguard-vpn-key', targetRegion),
       type: ec2.KeyPairType.RSA,
       format: ec2.KeyPairFormat.PEM,
     });
@@ -67,36 +72,36 @@ export class OwnvpnInfrastructureStack extends cdk.Stack {
     // Outputs for cross-stack references
     new cdk.CfnOutput(this, 'VPCId', {
       value: this.vpc.vpcId,
-      description: 'VPC ID for WireGuard VPN',
-      exportName: 'OwnVPN-VPC-ID',
+      description: `VPC ID for WireGuard VPN - ${targetRegion}`,
+      exportName: getExportName('VPC-ID', targetRegion),
     });
 
     new cdk.CfnOutput(this, 'SecurityGroupId', {
       value: this.securityGroup.securityGroupId,
-      description: 'Security Group ID for WireGuard VPN',
-      exportName: 'OwnVPN-SecurityGroup-ID',
+      description: `Security Group ID for WireGuard VPN - ${targetRegion}`,
+      exportName: getExportName('SecurityGroup-ID', targetRegion),
     });
 
     new cdk.CfnOutput(this, 'KeyPairId', {
       value: this.keyPair.keyPairId,
-      description: 'EC2 Key Pair ID for Systems Manager parameter',
-      exportName: 'OwnVPN-KeyPair-ID',
+      description: `EC2 Key Pair ID for Systems Manager parameter - ${targetRegion}`,
+      exportName: getExportName('KeyPair-ID', targetRegion),
     });
 
     new cdk.CfnOutput(this, 'KeyPairName', {
       value: this.keyPair.keyPairName,
-      description: 'EC2 Key Pair Name',
-      exportName: 'OwnVPN-KeyPair-Name',
+      description: `EC2 Key Pair Name - ${targetRegion}`,
+      exportName: getExportName('KeyPair-Name', targetRegion),
     });
 
     new cdk.CfnOutput(this, 'ServerRoleArn', {
       value: this.serverRole.roleArn,
-      description: 'IAM Role ARN for VPN server',
-      exportName: 'OwnVPN-ServerRole-ARN',
+      description: `IAM Role ARN for VPN server - ${targetRegion}`,
+      exportName: getExportName('ServerRole-ARN', targetRegion),
     });
 
     new cdk.CfnOutput(this, 'GetPrivateKeyCommand', {
-      value: `aws ssm get-parameter --name /ec2/keypair/${this.keyPair.keyPairId} --with-decryption --query Parameter.Value --output text --region eu-central-1 > ${this.keyPair.keyPairName}.pem && chmod 600 ${this.keyPair.keyPairName}.pem`,
+      value: `aws ssm get-parameter --name /ec2/keypair/${this.keyPair.keyPairId} --with-decryption --query Parameter.Value --output text --region ${targetRegion} > ${this.keyPair.keyPairName}.pem && chmod 600 ${this.keyPair.keyPairName}.pem`,
       description: 'Command to retrieve the private key from AWS Systems Manager',
     });
   }

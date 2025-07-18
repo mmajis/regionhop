@@ -3,6 +3,7 @@ import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { OwnvpnInfrastructureStack } from './ownvpn-infrastructure-stack';
+import { getVpnSubnet, getVpnPort } from './region-config';
 
 export interface OwnvpnComputeStackProps extends cdk.StackProps {
   infrastructureStack: OwnvpnInfrastructureStack;
@@ -14,13 +15,22 @@ export class OwnvpnComputeStack extends cdk.Stack {
 
     const { infrastructureStack } = props;
 
-    // Use Ubuntu 24.04 LTS AMI for eu-central-1
+    // Get the target region from the stack's environment
+    const targetRegion = this.region;
+
+    // Use Ubuntu 24.04 LTS AMI (works across all regions)
     const ubuntuAmi = ec2.MachineImage.fromSsmParameter(
       '/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id',
       {
         os: ec2.OperatingSystemType.LINUX,
       }
     );
+
+    // Get VPN configuration from region config
+    const vpnSubnet = getVpnSubnet();
+    const vpnPort = getVpnPort();
+    const vpnServerIP = vpnSubnet.replace('/24', '').replace(/\d+$/, '1'); // 10.8.0.1
+    const vpnSubnetBase = vpnSubnet.replace('/24', '').replace(/\.\d+$/, '.'); // 10.8.0.
 
     // WireGuard server installation and configuration script
     const userDataScript = ec2.UserData.forLinux();
@@ -40,7 +50,7 @@ export class OwnvpnComputeStack extends cdk.Stack {
       'ufw default deny incoming',
       'ufw default allow outgoing',
       'ufw allow 22/tcp',
-      'ufw allow 51820/udp',
+      `ufw allow ${vpnPort}/udp`,
       'ufw route allow in on wg0 out on ens5',
       'ufw --force enable',
       '',
@@ -61,8 +71,8 @@ export class OwnvpnComputeStack extends cdk.Stack {
       '# Create WireGuard server configuration',
       'printf "[Interface]\\n" > /etc/wireguard/wg0.conf',
       'printf "PrivateKey = \$(cat server_private_key)\\n" >> /etc/wireguard/wg0.conf',
-      'printf "Address = 10.8.0.1/24\\n" >> /etc/wireguard/wg0.conf',
-      'printf "ListenPort = 51820\\n" >> /etc/wireguard/wg0.conf',
+      `printf "Address = ${vpnServerIP}/24\\n" >> /etc/wireguard/wg0.conf`,
+      `printf "ListenPort = ${vpnPort}\\n" >> /etc/wireguard/wg0.conf`,
       'printf "PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o ens5 -j MASQUERADE\\n" >> /etc/wireguard/wg0.conf',
       'printf "PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o ens5 -j MASQUERADE\\n" >> /etc/wireguard/wg0.conf',
       '',
@@ -108,7 +118,7 @@ export class OwnvpnComputeStack extends cdk.Stack {
       'printf "CLIENT_PRIVATE_KEY=\\$(cat client_private_key)\\n\\n" >> /etc/wireguard/add-client.sh',
       'printf "# Assign client IP (simple increment)\\n" >> /etc/wireguard/add-client.sh',
       'printf "CLIENT_COUNT=\\$(ls -1 /etc/wireguard/clients/ | wc -l)\\n" >> /etc/wireguard/add-client.sh',
-      'printf "CLIENT_IP=\\"10.8.0.\\$((CLIENT_COUNT + 1))\\"\\n\\n" >> /etc/wireguard/add-client.sh',
+      `printf "CLIENT_IP=\\"${vpnSubnetBase}\\$((CLIENT_COUNT + 1))\\"\\n\\n" >> /etc/wireguard/add-client.sh`,
       'printf "# Create client configuration\\n" >> /etc/wireguard/add-client.sh',
       'printf "cat > \\${CLIENT_NAME}.conf << CLIENTEOF\\n" >> /etc/wireguard/add-client.sh',
       'printf "[Interface]\\n" >> /etc/wireguard/add-client.sh',
@@ -117,7 +127,7 @@ export class OwnvpnComputeStack extends cdk.Stack {
       'printf "DNS = 1.1.1.1, 8.8.8.8\\n\\n" >> /etc/wireguard/add-client.sh',
       'printf "[Peer]\\n" >> /etc/wireguard/add-client.sh',
       'printf "PublicKey = \\$SERVER_PUBLIC_KEY\\n" >> /etc/wireguard/add-client.sh',
-      'printf "Endpoint = \\$SERVER_IP:51820\\n" >> /etc/wireguard/add-client.sh',
+      `printf "Endpoint = \\$SERVER_IP:${vpnPort}\\n" >> /etc/wireguard/add-client.sh`,
       'printf "AllowedIPs = 0.0.0.0/0\\n" >> /etc/wireguard/add-client.sh',
       'printf "PersistentKeepalive = 25\\n" >> /etc/wireguard/add-client.sh',
       'printf "CLIENTEOF\\n\\n" >> /etc/wireguard/add-client.sh',
@@ -182,12 +192,12 @@ export class OwnvpnComputeStack extends cdk.Stack {
     // Output important information
     new cdk.CfnOutput(this, 'VPNServerIP', {
       value: elasticIp.ref,
-      description: 'WireGuard VPN Server Public IP',
+      description: `WireGuard VPN Server Public IP - ${targetRegion}`,
     });
 
     new cdk.CfnOutput(this, 'VPNServerInstanceId', {
       value: vpnServer.instanceId,
-      description: 'VPN Server EC2 Instance ID',
+      description: `VPN Server EC2 Instance ID - ${targetRegion}`,
     });
 
     new cdk.CfnOutput(this, 'SSHCommand', {
@@ -203,6 +213,16 @@ export class OwnvpnComputeStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'VPNStatusCommand', {
       value: 'sudo /etc/wireguard/vpn-status.sh',
       description: 'Command to check VPN server status',
+    });
+
+    new cdk.CfnOutput(this, 'VPNSubnet', {
+      value: vpnSubnet,
+      description: `VPN internal subnet - ${targetRegion}`,
+    });
+
+    new cdk.CfnOutput(this, 'VPNPort', {
+      value: vpnPort.toString(),
+      description: `VPN server port - ${targetRegion}`,
     });
   }
 }

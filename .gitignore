@@ -9,3 +9,4 @@ cdk.out
 
 wireguard-vpn-key.pem
 macos-client.conf
+client-configs/

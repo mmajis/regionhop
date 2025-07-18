@@ -1,16 +1,18 @@
 # WireGuard VPN Service on AWS
 
-A complete AWS CDK implementation of a personal WireGuard VPN service deployed to EU Frankfurt for privacy, security, and geo-unblocking.
+A complete AWS CDK implementation of a personal WireGuard VPN service with multi-region support for privacy, security, and geo-unblocking.
 
 ## 🚀 Features
 
 - **Modern VPN Protocol**: WireGuard for high performance and security
-- **Privacy-Focused**: Deployed in EU Frankfurt (eu-central-1)
+- **Multi-Region Support**: Deploy to 5 AWS regions for global coverage
+- **Privacy-Focused**: Default deployment in EU Frankfurt (eu-central-1)
 - **Easy macOS Integration**: Official WireGuard app support
 - **Automated Setup**: One-command deployment with CDK
 - **Enhanced Security**: fail2ban protection and UFW firewall
-- **Cost-Effective**: ~$10-15/month on t3.micro instance
+- **Cost-Effective**: ~$15/month per region on t3.micro instance
 - **Client Management**: Easy client configuration generation
+- **Region Management**: Deploy, manage, and destroy regions independently
 
 ## 📋 Prerequisites
 
@@ -51,24 +53,41 @@ npm install
 
 ### 2. Deploy the Stack
 
-Use the included deployment script for the easiest setup:
+The service now supports multi-region deployment. Use the deployment script for the easiest setup:
 
 ```bash
-./deploy.sh deploy
+# Deploy to default region (eu-central-1)
+./deploy.sh
+
+# Deploy to specific region
+./deploy.sh --region us-east-1
+
+# Deploy to multiple regions
+./deploy.sh --regions us-east-1,eu-central-1,ap-southeast-1
+
+# List available regions
+./deploy.sh --list-regions
+
+# Check deployment status
+./deploy.sh --status
 ```
 
-Or deploy manually:
+For manual deployment:
 
 ```bash
-# Bootstrap CDK (first-time only)
+# Bootstrap CDK for target region (first-time only)
 cdk bootstrap --region eu-central-1
 
-# Deploy the stack
-cdk deploy
+# Set region environment variable
+export VPN_REGION=eu-central-1
+
+# Deploy the stacks
+cdk deploy OwnVPN-eu-central-1-Infrastructure
+cdk deploy OwnVPN-eu-central-1-Compute
 ```
 
 The deployment will:
-- Create a VPC with public subnet
+- Create a VPC with public subnet in each region
 - Launch Ubuntu 24.04 LTS EC2 instance
 - Configure WireGuard server automatically
 - Set up fail2ban and firewall rules
@@ -76,27 +95,22 @@ The deployment will:
 - Create a default macOS client configuration
 - **Automatically retrieve the SSH private key**
 
-### 3. SSH Key Retrieval
+### 3. Region Management
 
-The deployment script automatically retrieves your SSH private key from AWS Systems Manager. If you need to retrieve it manually:
+Use the region manager for advanced region operations:
 
 ```bash
-# Get the key pair ID from deployment outputs
-KEY_PAIR_ID=$(aws cloudformation describe-stacks \
-  --stack-name OwnvpnStack \
-  --region eu-central-1 \
-  --query 'Stacks[0].Outputs[?OutputKey==`KeyPairId`].OutputValue' \
-  --output text)
+# List all regions with deployment status
+./region-manager.sh list
 
-# Retrieve the private key
-aws ssm get-parameter \
-  --name "/ec2/keypair/${KEY_PAIR_ID}" \
-  --with-decryption \
-  --query Parameter.Value \
-  --output text \
-  --region eu-central-1 > wireguard-vpn-key.pem
+# Deploy to specific region
+./region-manager.sh deploy us-west-2
 
-chmod 600 wireguard-vpn-key.pem
+# Destroy region deployment
+./region-manager.sh destroy us-west-2
+
+# Check health of all deployed regions
+./region-manager.sh health
 ```
 
 ## 📱 Client Setup (macOS)
@@ -105,20 +119,34 @@ chmod 600 wireguard-vpn-key.pem
 
 Download the official WireGuard app from the Mac App Store.
 
-### 2. Get Client Configuration (Easy Way)
+### 2. List Available Regions
 
-Use the connection helper script to automatically download the client configuration:
+First, see which regions are deployed:
 ```bash
-./connect.sh config
+./connect.sh list
 ```
 
-This will create a `macos-client.conf` file that you can directly import into the WireGuard app.
+### 3. Get Client Configuration
 
-### 2. Get Client Configuration (Manual Way)
-
-SSH into your server (the key file is automatically created by the deployment script):
+Use the connection helper script to automatically download the client configuration for a specific region:
 ```bash
-ssh -i wireguard-vpn-key.pem ubuntu@YOUR_SERVER_IP
+# Get configuration for default region
+./connect.sh config eu-central-1
+
+# Get configuration for US East
+./connect.sh config us-east-1
+
+# Get configuration for Asia Pacific
+./connect.sh config ap-southeast-1
+```
+
+This will create a `macos-client-<region>.conf` file that you can directly import into the WireGuard app.
+
+### 4. Manual Configuration (Advanced)
+
+SSH into your server in a specific region:
+```bash
+./connect.sh ssh eu-central-1
 ```
 
 Retrieve your client configuration:
@@ -126,40 +154,56 @@ Retrieve your client configuration:
 sudo cat /etc/wireguard/clients/macos-client/macos-client.conf
 ```
 
-### 3. Import Configuration
+### 5. Import Configuration
 
 1. Open WireGuard app
 2. Click "Import tunnel(s) from file"
-3. Select the `macos-client.conf` file (if using helper script) or create a new file with `.conf` extension
-4. If manual: Paste the configuration content
-5. Import the file
+3. Select the `macos-client-<region>.conf` file
+4. Import the file
+5. Repeat for each region you want to use
 
-### 4. Connect
+### 6. Connect
 
-Click the toggle switch in WireGuard app to connect.
+Click the toggle switch in WireGuard app to connect to your chosen region.
 
 ## 🔧 Management Commands
 
 ### Easy Connection Helper
-Use the included connection helper script for common tasks:
+Use the included connection helper script for region-specific tasks:
 
 ```bash
-# SSH to server
-./connect.sh ssh
+# List all deployed regions
+./connect.sh list
 
-# Get client configuration
-./connect.sh config
+# SSH to specific region
+./connect.sh ssh us-east-1
 
-# Check VPN status
-./connect.sh status
+# Get client configuration for region
+./connect.sh config eu-central-1
 
-# Add new client
-./connect.sh add-client iphone
+# Check VPN status in region
+./connect.sh status us-west-2
+
+# Add new client to region
+./connect.sh add-client us-east-1 iphone
+```
+
+### Region Management
+```bash
+# Deploy new region
+./region-manager.sh deploy ap-northeast-1
+
+# Check status of all regions
+./region-manager.sh status
+
+# Destroy region to save costs
+./region-manager.sh destroy us-west-2
 ```
 
 ### Manual SSH Access
 ```bash
-ssh -i wireguard-vpn-key.pem ubuntu@YOUR_SERVER_IP
+# SSH key files are created per region
+ssh -i wireguard-vpn-key-<region>.pem ubuntu@YOUR_SERVER_IP
 ```
 
 ### Server Management Commands
@@ -202,10 +246,11 @@ sudo fail2ban-client status sshd
 
 ## 🛡️ Network Configuration
 
-### Server Network
-- **VPN Subnet**: 10.0.0.0/24
-- **Server IP**: 10.0.0.1
-- **Client Range**: 10.0.0.2-10.0.0.254
+### Server Network (Per Region)
+- **VPN Subnet**: 10.8.0.0/24 (configured in regions.json)
+- **Server IP**: 10.8.0.1
+- **Client Range**: 10.8.0.2-10.8.0.254
+- **VPN Port**: 51820 (configurable per region)
 
 ### DNS Configuration
 - Primary: 1.1.1.1 (Cloudflare)
@@ -215,6 +260,15 @@ sudo fail2ban-client status sshd
 - All client traffic routed through VPN
 - IP forwarding enabled
 - NAT configured for internet access
+- Each region operates independently
+
+### Region Selection
+Choose regions based on your needs:
+- **eu-central-1**: European privacy, GDPR compliance
+- **us-east-1**: US East Coast, low latency to East Coast
+- **us-west-2**: US West Coast, low latency to West Coast
+- **ap-southeast-1**: Asia Pacific, Singapore access
+- **ap-northeast-1**: Asia Pacific, Japan access
 
 ## 📊 Monitoring
 
@@ -240,17 +294,26 @@ sudo wg show
 
 ## 💰 Cost Optimization
 
-### Current Configuration
+### Current Configuration (Per Region)
 - **Instance Type**: t3.micro (Free tier eligible)
 - **Storage**: 8GB gp3 EBS volume
 - **Network**: Elastic IP included
-- **Estimated Monthly Cost**: $10-15 USD
+- **Estimated Monthly Cost**: ~$15 USD per region
+
+### Multi-Region Cost Considerations
+- **Single Region**: ~$15/month
+- **Two Regions**: ~$30/month
+- **Global Coverage (5 regions)**: ~$75/month
+- **Data Transfer**: Inter-region transfer charges apply
 
 ### Cost Reduction Tips
-1. Use AWS Free Tier if eligible
-2. Consider t3.nano for lower traffic
-3. Monitor data transfer costs
-4. Use CloudWatch alarms for usage alerts
+1. Use AWS Free Tier if eligible (first region only)
+2. Deploy only needed regions - destroy unused ones
+3. Use `./region-manager.sh destroy <region>` to remove costly regions
+4. Monitor data transfer costs between regions
+5. Consider t3.nano for lower traffic regions
+6. Use CloudWatch alarms for usage alerts per region
+7. Regularly review deployed regions with `./region-manager.sh status`
 
 ## 🔧 Troubleshooting
 

@@ -1,0 +1,37 @@
+{
+  "supportedRegions": [
+    {
+      "code": "eu-central-1",
+      "name": "Europe (Frankfurt)",
+      "description": "European privacy and access"
+    },
+    {
+      "code": "us-east-1",
+      "name": "US East (N. Virginia)",
+      "description": "North American access"
+    },
+    {
+      "code": "us-west-2",
+      "name": "US West (Oregon)",
+      "description": "US West Coast access"
+    },
+    {
+      "code": "ap-southeast-1",
+      "name": "Asia Pacific (Singapore)",
+      "description": "Southeast Asian access"
+    },
+    {
+      "code": "ap-northeast-1",
+      "name": "Asia Pacific (Tokyo)",
+      "description": "Japanese access"
+    },
+    {
+      "code": "ap-south-2",
+      "name": "Asia Pacific (Hyderabad)",
+      "description": "Indian access"
+    }
+  ],
+  "defaultRegion": "eu-central-1",
+  "vpnSubnet": "10.8.0.0/24",
+  "vpnPort": 51820
+}

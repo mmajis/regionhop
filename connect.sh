@@ -1,251 +1,313 @@
 #!/bin/bash
 
 # WireGuard VPN Connection Helper Script
-# This script helps you connect to your WireGuard VPN server
-#
-# Note: This script works with the two-stack architecture:
-# - OwnvpnInfrastructureStack: Contains VPC, security groups, IAM roles, key pairs
-# - OwnvpnComputeStack: Contains EC2 instance and Elastic IP
-#
-# Both stacks must be deployed for this script to work properly.
+# This script helps you connect to your WireGuard VPN server across multiple regions
+# Now supports region selection and multi-region management
 
 set -e
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# Source shared helper functions
+if [ -f "scripts/region-helpers.sh" ]; then
+    source scripts/region-helpers.sh
+else
+    echo "Error: scripts/region-helpers.sh not found"
+    exit 1
+fi
 
-# Function to print colored output
-print_status() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
-
-print_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-print_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-# Check if both stacks are deployed
-check_stacks() {
-    print_status "Checking stack deployments..."
+# Show deployed regions
+list_deployed() {
+    print_status "Deployed VPN regions:"
+    echo
     
-    # Check infrastructure stack
-    if ! aws cloudformation describe-stacks --stack-name OwnvpnInfrastructureStack --region eu-central-1 >/dev/null 2>&1; then
-        print_error "Infrastructure stack (OwnvpnInfrastructureStack) not found."
-        print_error "Please deploy the infrastructure stack first using: ./deploy.sh"
+    local deployed_regions=$(list_deployed_regions)
+    if [ $? -ne 0 ]; then
         return 1
     fi
     
-    # Check compute stack
-    if ! aws cloudformation describe-stacks --stack-name OwnvpnComputeStack --region eu-central-1 >/dev/null 2>&1; then
-        print_error "Compute stack (OwnvpnComputeStack) not found."
-        print_error "Please deploy the compute stack using: ./deploy.sh or ./compute-stack-manager.sh deploy"
-        return 1
-    fi
-    
-    print_success "Both stacks are deployed."
-}
-
-# Get VPN server IP from compute stack outputs
-get_server_ip() {
-    local server_ip=$(aws cloudformation describe-stacks \
-        --stack-name OwnvpnComputeStack \
-        --region eu-central-1 \
-        --query 'Stacks[0].Outputs[?OutputKey==`VPNServerIP`].OutputValue' \
-        --output text 2>/dev/null)
-    
-    if [ -z "$server_ip" ] || [ "$server_ip" = "None" ]; then
-        print_error "Could not retrieve server IP. Is the compute stack deployed?"
-        return 1
-    fi
-    
-    echo "$server_ip"
-}
-
-# Ensure SSH key exists
-ensure_ssh_key() {
-    if [ ! -f "wireguard-vpn-key.pem" ]; then
-        print_status "SSH key not found. Retrieving from AWS Systems Manager..."
+    for region in $deployed_regions; do
+        local region_info=$(get_region_info "$region")
+        local region_name=$(echo "$region_info" | jq -r '.name' 2>/dev/null)
+        local vpn_ip=$(get_vpn_server_ip "$region")
         
-        local key_pair_id=$(aws cloudformation describe-stacks \
-            --stack-name OwnvpnInfrastructureStack \
-            --region eu-central-1 \
-            --query 'Stacks[0].Outputs[?OutputKey==`KeyPairId`].OutputValue' \
-            --output text 2>/dev/null)
-        
-        if [ -z "$key_pair_id" ] || [ "$key_pair_id" = "None" ]; then
-            print_error "Could not retrieve key pair ID from infrastructure stack outputs"
-            return 1
+        if [ -n "$vpn_ip" ] && [ "$vpn_ip" != "null" ]; then
+            print_success "$region - $region_name ($vpn_ip)"
+        else
+            print_warning "$region - $region_name (IP not available)"
         fi
-        
-        aws ssm get-parameter \
-            --name "/ec2/keypair/${key_pair_id}" \
-            --with-decryption \
-            --query Parameter.Value \
-            --output text \
-            --region eu-central-1 > wireguard-vpn-key.pem
-        
-        chmod 600 wireguard-vpn-key.pem
-        print_success "SSH key retrieved and saved as wireguard-vpn-key.pem"
-    fi
+    done
+    
+    echo
+    print_status "Use './connect.sh ssh <region>' to connect to a specific region"
 }
 
-# SSH to server
-ssh_to_server() {
-    local server_ip=$(get_server_ip)
+# SSH to specific region
+ssh_to_region() {
+    local region=$1
+    
+    if [ -z "$region" ]; then
+        print_error "Region parameter is required"
+        echo "Usage: $0 ssh <region>"
+        return 1
+    fi
+    
+    validate_region "$region"
     if [ $? -ne 0 ]; then
         return 1
     fi
     
-    ensure_ssh_key
+    # Check if region is deployed
+    local infra_stack=$(get_stack_name "Infrastructure" "$region")
+    local compute_stack=$(get_stack_name "Compute" "$region")
+    
+    if ! stack_exists "$infra_stack" "$region" || ! stack_exists "$compute_stack" "$region"; then
+        print_error "VPN service is not deployed in region $region"
+        print_status "Available regions:"
+        list_deployed_regions 2>/dev/null || print_warning "No regions deployed"
+        return 1
+    fi
+    
+    local server_ip=$(get_vpn_server_ip "$region")
+    if [ -z "$server_ip" ] || [ "$server_ip" = "null" ]; then
+        print_error "Could not retrieve server IP for region $region"
+        return 1
+    fi
+    
+    local key_file=$(get_ssh_key "$region")
     if [ $? -ne 0 ]; then
         return 1
     fi
     
-    print_status "Connecting to VPN server at $server_ip..."
-    ssh -i wireguard-vpn-key.pem ubuntu@"$server_ip"
+    print_status "Connecting to VPN server in $region at $server_ip..."
+    ssh -i "$key_file" ubuntu@"$server_ip"
 }
 
-# Get client configuration
+# Get client configuration for specific region
 get_client_config() {
-    local server_ip=$(get_server_ip)
+    local region=$1
+    
+    if [ -z "$region" ]; then
+        print_error "Region parameter is required"
+        echo "Usage: $0 config <region>"
+        return 1
+    fi
+    
+    validate_region "$region"
     if [ $? -ne 0 ]; then
         return 1
     fi
     
-    ensure_ssh_key
+    # Check if region is deployed
+    local infra_stack=$(get_stack_name "Infrastructure" "$region")
+    local compute_stack=$(get_stack_name "Compute" "$region")
+    
+    if ! stack_exists "$infra_stack" "$region" || ! stack_exists "$compute_stack" "$region"; then
+        print_error "VPN service is not deployed in region $region"
+        return 1
+    fi
+    
+    local server_ip=$(get_vpn_server_ip "$region")
+    if [ -z "$server_ip" ] || [ "$server_ip" = "null" ]; then
+        print_error "Could not retrieve server IP for region $region"
+        return 1
+    fi
+    
+    local key_file=$(get_ssh_key "$region")
     if [ $? -ne 0 ]; then
         return 1
     fi
     
-    print_status "Retrieving client configuration from server..."
-    ssh -i wireguard-vpn-key.pem ubuntu@"$server_ip" \
-        "sudo cat /etc/wireguard/clients/macos-client/macos-client.conf" > macos-client.conf
+    mkdir -p client-configs
+    local config_file="client/configs/macos-client-${region}.conf"
+    
+    print_status "Retrieving client configuration from $region..."
+    ssh -i "$key_file" ubuntu@"$server_ip" \
+        "sudo cat /etc/wireguard/clients/macos-client/macos-client.conf" > "$config_file"
     
     if [ $? -eq 0 ]; then
-        print_success "Client configuration saved as macos-client.conf"
+        print_success "Client configuration saved as $config_file"
         echo
         print_status "To import to WireGuard app:"
         echo "1. Open WireGuard app on macOS"
         echo "2. Click 'Import tunnel(s) from file'"
-        echo "3. Select the macos-client.conf file"
+        echo "3. Select the $config_file file"
         echo "4. Click 'Import' and then toggle to connect"
     else
-        print_error "Failed to retrieve client configuration"
+        print_error "Failed to retrieve client configuration from $region"
         return 1
     fi
 }
 
-# Check VPN status
-check_vpn_status() {
-    local server_ip=$(get_server_ip)
+# Check VPN status for specific region
+check_region_status() {
+    local region=$1
+    
+    if [ -z "$region" ]; then
+        print_error "Region parameter is required"
+        echo "Usage: $0 status <region>"
+        return 1
+    fi
+    
+    validate_region "$region"
     if [ $? -ne 0 ]; then
         return 1
     fi
     
-    ensure_ssh_key
+    # Check if region is deployed
+    local infra_stack=$(get_stack_name "Infrastructure" "$region")
+    local compute_stack=$(get_stack_name "Compute" "$region")
+    
+    if ! stack_exists "$infra_stack" "$region" || ! stack_exists "$compute_stack" "$region"; then
+        print_error "VPN service is not deployed in region $region"
+        return 1
+    fi
+    
+    local server_ip=$(get_vpn_server_ip "$region")
+    if [ -z "$server_ip" ] || [ "$server_ip" = "null" ]; then
+        print_error "Could not retrieve server IP for region $region"
+        return 1
+    fi
+    
+    local key_file=$(get_ssh_key "$region")
     if [ $? -ne 0 ]; then
         return 1
     fi
     
-    print_status "Checking VPN server status..."
-    ssh -i wireguard-vpn-key.pem ubuntu@"$server_ip" \
+    print_status "Checking VPN server status in $region..."
+    ssh -i "$key_file" ubuntu@"$server_ip" \
         "sudo /etc/wireguard/vpn-status.sh"
 }
 
-# Add new client
-add_client() {
-    local client_name=$1
+# Add new client to specific region
+add_client_to_region() {
+    local region=$1
+    local client_name=$2
     
-    if [ -z "$client_name" ]; then
-        print_error "Client name is required"
-        echo "Usage: $0 add-client <client-name>"
+    if [ -z "$region" ] || [ -z "$client_name" ]; then
+        print_error "Both region and client name are required"
+        echo "Usage: $0 add-client <region> <client-name>"
         return 1
     fi
     
-    local server_ip=$(get_server_ip)
+    validate_region "$region"
     if [ $? -ne 0 ]; then
         return 1
     fi
     
-    ensure_ssh_key
+    # Check if region is deployed
+    local infra_stack=$(get_stack_name "Infrastructure" "$region")
+    local compute_stack=$(get_stack_name "Compute" "$region")
+    
+    if ! stack_exists "$infra_stack" "$region" || ! stack_exists "$compute_stack" "$region"; then
+        print_error "VPN service is not deployed in region $region"
+        return 1
+    fi
+    
+    local server_ip=$(get_vpn_server_ip "$region")
+    if [ -z "$server_ip" ] || [ "$server_ip" = "null" ]; then
+        print_error "Could not retrieve server IP for region $region"
+        return 1
+    fi
+    
+    local key_file=$(get_ssh_key "$region")
     if [ $? -ne 0 ]; then
         return 1
     fi
     
-    print_status "Adding new client: $client_name"
-    ssh -i wireguard-vpn-key.pem ubuntu@"$server_ip" \
+    print_status "Adding new client '$client_name' to region $region..."
+    ssh -i "$key_file" ubuntu@"$server_ip" \
         "sudo /etc/wireguard/add-client.sh $client_name"
     
     if [ $? -eq 0 ]; then
-        print_success "Client $client_name added successfully"
+        print_success "Client $client_name added successfully to region $region"
         print_status "Downloading client configuration..."
         
-        ssh -i wireguard-vpn-key.pem ubuntu@"$server_ip" \
-            "sudo cat /etc/wireguard/clients/$client_name/$client_name.conf" > "$client_name.conf"
+        local config_file="${client_name}-${region}.conf"
+        ssh -i "$key_file" ubuntu@"$server_ip" \
+            "sudo cat /etc/wireguard/clients/$client_name/$client_name.conf" > "$config_file"
         
         if [ $? -eq 0 ]; then
-            print_success "Client configuration saved as $client_name.conf"
+            print_success "Client configuration saved as $config_file"
         fi
     else
-        print_error "Failed to add client"
+        print_error "Failed to add client to region $region"
         return 1
     fi
 }
 
 # Show usage
-usage() {
+show_usage() {
     echo "Usage: $0 <command> [options]"
     echo
     echo "Commands:"
-    echo "  ssh                     SSH into the VPN server"
-    echo "  config                  Download client configuration"
-    echo "  status                  Check VPN server status"
-    echo "  add-client <name>       Add a new VPN client"
-    echo "  help                    Show this help message"
+    echo "  list                        List all deployed regions"
+    echo "  ssh <region>               SSH into VPN server in specific region"
+    echo "  config <region>            Download client configuration for region"
+    echo "  status <region>            Check VPN server status in region"
+    echo "  add-client <region> <name> Add new VPN client to region"
+    echo "  help                       Show this help message"
     echo
     echo "Examples:"
-    echo "  $0 ssh"
-    echo "  $0 config"
-    echo "  $0 status"
-    echo "  $0 add-client iphone"
+    echo "  $0 list                           # List all deployed regions"
+    echo "  $0 ssh us-east-1                 # SSH to us-east-1 VPN server"
+    echo "  $0 config eu-central-1           # Get config for eu-central-1"
+    echo "  $0 status us-west-2              # Check status in us-west-2"
+    echo "  $0 add-client us-east-1 iphone   # Add iPhone client to us-east-1"
+    echo
+    echo "Region Management:"
+    echo "  Use './deploy.sh --list-regions' to see all available regions"
+    echo "  Use './deploy.sh --region <region>' to deploy to a specific region"
+    echo "  Use './region-manager.sh' for advanced region management"
+}
+
+# Backward compatibility function - if no arguments, show deployed regions
+show_legacy_behavior() {
+    print_status "WireGuard VPN Connection Helper"
+    echo
+    list_deployed
 }
 
 # Main function
 main() {
     case "$1" in
-        ssh)
-            ssh_to_server
-            ;;
-        config)
-            get_client_config
-            ;;
-        status)
-            check_vpn_status
-            ;;
-        add-client)
-            add_client "$2"
-            ;;
         help)
-            usage
+            show_usage
+            return 0
             ;;
         *)
-            if [ -z "$1" ]; then
-                print_error "No command specified"
-            else
-                print_error "Unknown command: $1"
+            # Check prerequisites for all other commands
+            check_prerequisites
+            if [ $? -ne 0 ]; then
+                exit 1
             fi
-            usage
+            ;;
+    esac
+    
+    case "$1" in
+        list)
+            list_deployed
+            ;;
+        ssh)
+            ssh_to_region "$2"
+            ;;
+        config)
+            get_client_config "$2"
+            ;;
+        status)
+            check_region_status "$2"
+            ;;
+        add-client)
+            add_client_to_region "$2" "$3"
+            ;;
+        help)
+            # Already handled above
+            ;;
+        "")
+            # Backward compatibility - if no command, show deployed regions
+            show_legacy_behavior
+            ;;
+        *)
+            print_error "Unknown command: $1"
+            show_usage
             exit 1
             ;;
     esac
