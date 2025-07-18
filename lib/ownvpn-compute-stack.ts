@@ -20,7 +20,7 @@ export class OwnvpnComputeStack extends cdk.Stack {
 
     // Use Ubuntu 24.04 LTS AMI (works across all regions)
     const ubuntuAmi = ec2.MachineImage.fromSsmParameter(
-      '/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id',
+      '/aws/service/canonical/ubuntu/server/24.04/stable/current/arm64/hvm/ebs-gp3/ami-id',
       {
         os: ec2.OperatingSystemType.LINUX,
       }
