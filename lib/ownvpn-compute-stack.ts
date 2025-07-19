@@ -208,6 +208,7 @@ export class OwnvpnComputeStack extends cdk.Stack {
       const dnsUpdaterLambda = new lambdaNodejs.NodejsFunction(this, 'DnsUpdaterLambda', {
         entry: 'lib/dns-updater-lambda.ts',
         runtime: lambda.Runtime.NODEJS_22_X,
+        architecture: lambda.Architecture.ARM_64,
         environment: {
           DOMAIN_NAME: vpnDomain,
           HOSTED_ZONE_ID: getHostedZoneId() || '',
@@ -274,6 +275,7 @@ export class OwnvpnComputeStack extends cdk.Stack {
       // Create a custom resource to set the desired capacity after EventBridge is set up
       const setDesiredCapacityLambda = new lambda.Function(this, 'SetDesiredCapacityLambda', {
         runtime: lambda.Runtime.PYTHON_3_12,
+        architecture: lambda.Architecture.ARM_64,
         handler: 'index.handler',
         code: lambda.Code.fromInline(`
 import boto3
