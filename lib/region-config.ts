@@ -12,6 +12,9 @@ export interface RegionConfig {
   defaultRegion: string;
   vpnSubnet: string;
   vpnPort: number;
+  domain?: string;
+  hostedZoneId?: string;
+  dnsRecordTtl?: number;
 }
 
 let regionConfig: RegionConfig | null = null;
@@ -114,4 +117,64 @@ export function validateRegion(region: string): void {
     const supportedRegions = getSupportedRegions().map(r => r.code).join(', ');
     throw new Error(`Unsupported region: ${region}. Supported regions: ${supportedRegions}`);
   }
+}
+
+/**
+ * Get domain configuration from environment or config file
+ */
+export function getDomain(): string {
+  const envDomain = process.env.VPN_DOMAIN;
+  if (envDomain) {
+    return envDomain;
+  }
+
+  const config = loadRegionConfig();
+  return config.domain || 'majakorpi.net';
+}
+
+/**
+ * Get hosted zone ID from environment or config file
+ */
+export function getHostedZoneId(): string | undefined {
+  const envHostedZoneId = process.env.VPN_HOSTED_ZONE_ID;
+  if (envHostedZoneId) {
+    return envHostedZoneId;
+  }
+
+  const config = loadRegionConfig();
+  return config.hostedZoneId;
+}
+
+/**
+ * Get DNS record TTL from environment or config file
+ */
+export function getDnsRecordTtl(): number {
+  const envTtl = process.env.VPN_DNS_TTL;
+  if (envTtl) {
+    return parseInt(envTtl, 10);
+  }
+
+  const config = loadRegionConfig();
+  return config.dnsRecordTtl || 30; // Default 30 seconds for quick failover
+}
+
+/**
+ * Generate VPN subdomain for a region
+ */
+export function getVpnSubdomain(region: string): string {
+  const domain = getDomain();
+  return `${region}.vpn.${domain}`;
+}
+
+/**
+ * Check if DNS management is enabled
+ */
+export function isDnsManagementEnabled(): boolean {
+  const envDisabled = process.env.VPN_DISABLE_DNS;
+  if (envDisabled && envDisabled.toLowerCase() === 'true') {
+    return false;
+  }
+
+  // DNS management is enabled by default
+  return true;
 }

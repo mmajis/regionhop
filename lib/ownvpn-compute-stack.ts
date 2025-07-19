@@ -3,8 +3,12 @@ import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as autoscaling from 'aws-cdk-lib/aws-autoscaling';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as events from 'aws-cdk-lib/aws-events';
+import * as targets from 'aws-cdk-lib/aws-events-targets';
+import * as route53 from 'aws-cdk-lib/aws-route53';
 import { OwnvpnInfrastructureStack } from './ownvpn-infrastructure-stack';
-import { getVpnSubnet, getVpnPort } from './region-config';
+import { getVpnSubnet, getVpnPort, getDomain, getHostedZoneId, getDnsRecordTtl, getVpnSubdomain, isDnsManagementEnabled } from './region-config';
 
 export interface OwnvpnComputeStackProps extends cdk.StackProps {
   infrastructureStack: OwnvpnInfrastructureStack;
@@ -197,16 +201,99 @@ export class OwnvpnComputeStack extends cdk.Stack {
       },
     });
 
-    // Create Elastic IP for static endpoint
-    const elasticIp = new ec2.CfnEIP(this, 'WireGuardElasticIP', {
-      domain: 'vpc',
-    });
+
+    // DNS Management Setup (if enabled)
+    if (isDnsManagementEnabled()) {
+      const vpnDomain = getVpnSubdomain(targetRegion);
+      const dnsRecordTtl = getDnsRecordTtl();
+
+      // Create Lambda function for DNS management
+      const dnsUpdaterLambda = new lambda.Function(this, 'DnsUpdaterLambda', {
+        runtime: lambda.Runtime.NODEJS_22_X,
+        handler: 'dns-updater-lambda.handler',
+        code: lambda.Code.fromAsset('lib', {
+          bundling: {
+            image: lambda.Runtime.NODEJS_22_X.bundlingImage,
+            command: [
+              'bash', '-c',
+              'cp -r /asset-input/* /asset-output/ && cd /asset-output && npm install --production'
+            ],
+          },
+        }),
+        environment: {
+          DOMAIN_NAME: vpnDomain,
+          HOSTED_ZONE_ID: getHostedZoneId() || '',
+          DNS_RECORD_TTL: dnsRecordTtl.toString(),
+        },
+        timeout: cdk.Duration.minutes(5),
+        memorySize: 256,
+      });
+
+      // Grant permissions to Lambda
+      dnsUpdaterLambda.addToRolePolicy(new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          'ec2:DescribeInstances',
+        ],
+        resources: ['*'],
+      }));
+
+      dnsUpdaterLambda.addToRolePolicy(new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          'route53:ChangeResourceRecordSets',
+          'route53:ListHostedZonesByName',
+          'route53:GetHostedZone',
+        ],
+        resources: ['*'],
+      }));
+
+      dnsUpdaterLambda.addToRolePolicy(new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          'autoscaling:DescribeAutoScalingGroups',
+          'autoscaling:DescribeAutoScalingInstances',
+        ],
+        resources: ['*'],
+      }));
+
+      // Create EventBridge rule for ASG events
+      const asgEventRule = new events.Rule(this, 'ASGEventRule', {
+        eventPattern: {
+          source: ['aws.autoscaling'],
+          detailType: ['EC2 Instance Launch Successful', 'EC2 Instance Launch Unsuccessful'],
+          detail: {
+            AutoScalingGroupName: [autoScalingGroup.autoScalingGroupName],
+          },
+        },
+        description: 'Trigger DNS update when ASG instances change',
+      });
+
+      // Add Lambda as target for EventBridge rule
+      asgEventRule.addTarget(new targets.LambdaFunction(dnsUpdaterLambda));
+
+      // Route 53 record will be created and managed by the Lambda function
+    }
 
     // Output important information
     new cdk.CfnOutput(this, 'VPNServerIP', {
-      value: elasticIp.ref,
-      description: `WireGuard VPN Server Public IP - ${targetRegion}`,
+      value: 'Dynamic IP - Check DNS record or ASG instances',
+      description: `WireGuard VPN Server Public IP - ${targetRegion} (Dynamic)`,
     });
+
+    if (isDnsManagementEnabled()) {
+      const vpnDomain = getVpnSubdomain(targetRegion);
+
+      new cdk.CfnOutput(this, 'VPNServerDomain', {
+        value: vpnDomain,
+        description: `VPN Server Domain Name - ${targetRegion}`,
+      });
+
+      new cdk.CfnOutput(this, 'DNSManagementEnabled', {
+        value: 'DNS records will be automatically updated when spot instances are replaced',
+        description: 'DNS auto-update status',
+      });
+    }
 
     new cdk.CfnOutput(this, 'VPNServerAutoScalingGroup', {
       value: autoScalingGroup.autoScalingGroupName,
@@ -214,8 +301,8 @@ export class OwnvpnComputeStack extends cdk.Stack {
     });
 
     new cdk.CfnOutput(this, 'SSHCommand', {
-      value: `ssh -i ${infrastructureStack.keyPair.keyPairName}.pem ubuntu@${elasticIp.ref}`,
-      description: 'SSH command to connect to VPN server (after retrieving private key)',
+      value: `ssh -i ${infrastructureStack.keyPair.keyPairName}.pem ubuntu@<DYNAMIC_IP>`,
+      description: 'SSH command to connect to VPN server (replace <DYNAMIC_IP> with current instance IP or use domain name)',
     });
 
     new cdk.CfnOutput(this, 'SpotInstanceNote', {
@@ -223,9 +310,9 @@ export class OwnvpnComputeStack extends cdk.Stack {
       description: 'Important note about spot instances',
     });
 
-    new cdk.CfnOutput(this, 'EIPAssociationNote', {
-      value: 'The Elastic IP must be manually associated with the current instance in the Auto Scaling Group after deployment.',
-      description: 'Manual step required for EIP association',
+    new cdk.CfnOutput(this, 'AutomatedRecovery', {
+      value: 'DNS updates are automated via Lambda when spot instances are replaced using dynamic public IPs.',
+      description: 'Automated recovery capabilities',
     });
 
     new cdk.CfnOutput(this, 'ClientConfigLocation', {
