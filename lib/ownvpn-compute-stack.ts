@@ -114,8 +114,15 @@ export class OwnvpnComputeStack extends cdk.Stack {
       'printf "CLIENT_NAME=\\$1\\n" >> /etc/wireguard/add-client.sh',
       'printf "CLIENT_DIR=\\"/etc/wireguard/clients/\\$CLIENT_NAME\\"\\n" >> /etc/wireguard/add-client.sh',
       'printf "SERVER_PUBLIC_KEY=\\$(cat /etc/wireguard/server_public_key)\\n" >> /etc/wireguard/add-client.sh',
-      'printf "TOKEN=\\$(curl -X PUT \\"http://169.254.169.254/latest/api/token\\" -H \\"X-aws-ec2-metadata-token-ttl-seconds: 21600\\" -s)\\n" >> /etc/wireguard/add-client.sh',
-      'printf "SERVER_IP=\\$(curl -H \\"X-aws-ec2-metadata-token: \\$TOKEN\\" -s http://169.254.169.254/latest/meta-data/public-ipv4)\\n\\n" >> /etc/wireguard/add-client.sh',
+      // Conditionally set endpoint based on DNS management
+      ...(isDnsManagementEnabled() ? [
+        // Use DNS name when DNS management is enabled
+        `printf "SERVER_ENDPOINT=\\"${getVpnSubdomain(targetRegion)}\\"\\n\\n" >> /etc/wireguard/add-client.sh`,
+      ] : [
+        // Fallback to IP address when DNS management is disabled
+        'printf "TOKEN=\\$(curl -X PUT \\"http://169.254.169.254/latest/api/token\\" -H \\"X-aws-ec2-metadata-token-ttl-seconds: 21600\\" -s)\\n" >> /etc/wireguard/add-client.sh',
+        'printf "SERVER_ENDPOINT=\\$(curl -H \\"X-aws-ec2-metadata-token: \\$TOKEN\\" -s http://169.254.169.254/latest/meta-data/public-ipv4)\\n\\n" >> /etc/wireguard/add-client.sh',
+      ]),
       'printf "mkdir -p \\$CLIENT_DIR\\n" >> /etc/wireguard/add-client.sh',
       'printf "cd \\$CLIENT_DIR\\n\\n" >> /etc/wireguard/add-client.sh',
       'printf "# Generate client keys\\n" >> /etc/wireguard/add-client.sh',
@@ -133,7 +140,7 @@ export class OwnvpnComputeStack extends cdk.Stack {
       'printf "DNS = 1.1.1.1, 8.8.8.8\\n\\n" >> /etc/wireguard/add-client.sh',
       'printf "[Peer]\\n" >> /etc/wireguard/add-client.sh',
       'printf "PublicKey = \\$SERVER_PUBLIC_KEY\\n" >> /etc/wireguard/add-client.sh',
-      `printf "Endpoint = \\$SERVER_IP:${vpnPort}\\n" >> /etc/wireguard/add-client.sh`,
+      `printf "Endpoint = \\$SERVER_ENDPOINT:${vpnPort}\\n" >> /etc/wireguard/add-client.sh`,
       'printf "AllowedIPs = 0.0.0.0/0\\n" >> /etc/wireguard/add-client.sh',
       'printf "PersistentKeepalive = 25\\n" >> /etc/wireguard/add-client.sh',
       'printf "CLIENTEOF\\n\\n" >> /etc/wireguard/add-client.sh',
