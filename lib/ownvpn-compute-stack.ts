@@ -251,7 +251,6 @@ export class OwnvpnComputeStack extends cdk.Stack {
         launchTemplate: launchTemplate,
         minCapacity: 0,
         maxCapacity: 1,
-        desiredCapacity: 0, // Start with 0 so we can set up EventBridge first
         vpcSubnets: {
           subnetType: ec2.SubnetType.PUBLIC,
         },
