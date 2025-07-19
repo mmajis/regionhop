@@ -173,10 +173,8 @@ The multi-region implementation includes:
 
 1. **AWS Credentials**
    ```bash
-   # Set up AWS credentials
-   source ~/bin/aws-majakorpi-iki  # If available
-   # or
    aws configure
+   # Or your preferred method to set AWS credentials
    ```
 
 2. **Region Not Bootstrapped**

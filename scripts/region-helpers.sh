@@ -430,7 +430,7 @@ check_prerequisites() {
     # Check AWS credentials
     if ! aws sts get-caller-identity >/dev/null 2>&1; then
         print_error "AWS credentials are not configured."
-        print_error "Please run 'aws configure' or 'source ~/bin/aws-majakorpi-iki' if available."
+        print_error "Please run 'aws configure' or use your preferred method to set up your AWS credentials."
         return 1
     fi
 
