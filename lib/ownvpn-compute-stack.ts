@@ -4,6 +4,7 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as autoscaling from 'aws-cdk-lib/aws-autoscaling';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as lambdaNodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as route53 from 'aws-cdk-lib/aws-route53';
@@ -183,43 +184,23 @@ export class OwnvpnComputeStack extends cdk.Stack {
       role: infrastructureStack.serverRole,
       userData: userDataScript,
       spotOptions: {
-        requestType: ec2.SpotRequestType.PERSISTENT,
+        requestType: ec2.SpotRequestType.ONE_TIME,
         // Set a reasonable spot price limit (optional - if not set, uses on-demand price as max)
         //maxPrice: 0.01, // $0.01 per hour - adjust as needed
       },
     });
 
-    // Create Auto Scaling Group for spot instances
-    const autoScalingGroup = new autoscaling.AutoScalingGroup(this, 'WireGuardAutoScalingGroup', {
-      vpc: infrastructureStack.vpc,
-      launchTemplate: launchTemplate,
-      minCapacity: 1,
-      maxCapacity: 1,
-      desiredCapacity: 1,
-      vpcSubnets: {
-        subnetType: ec2.SubnetType.PUBLIC,
-      },
-    });
+    // DNS Management Setup (if enabled) - CREATE BEFORE ASG
+    let autoScalingGroup: autoscaling.AutoScalingGroup;
 
-
-    // DNS Management Setup (if enabled)
     if (isDnsManagementEnabled()) {
       const vpnDomain = getVpnSubdomain(targetRegion);
       const dnsRecordTtl = getDnsRecordTtl();
 
       // Create Lambda function for DNS management
-      const dnsUpdaterLambda = new lambda.Function(this, 'DnsUpdaterLambda', {
+      const dnsUpdaterLambda = new lambdaNodejs.NodejsFunction(this, 'DnsUpdaterLambda', {
+        entry: 'lib/dns-updater-lambda.ts',
         runtime: lambda.Runtime.NODEJS_22_X,
-        handler: 'dns-updater-lambda.handler',
-        code: lambda.Code.fromAsset('lib', {
-          bundling: {
-            image: lambda.Runtime.NODEJS_22_X.bundlingImage,
-            command: [
-              'bash', '-c',
-              'cp -r /asset-input/* /asset-output/ && cd /asset-output && npm install --production'
-            ],
-          },
-        }),
         environment: {
           DOMAIN_NAME: vpnDomain,
           HOSTED_ZONE_ID: getHostedZoneId() || '',
@@ -257,7 +238,19 @@ export class OwnvpnComputeStack extends cdk.Stack {
         resources: ['*'],
       }));
 
-      // Create EventBridge rule for ASG events
+      // Create Auto Scaling Group for spot instances with 0 initial capacity
+      autoScalingGroup = new autoscaling.AutoScalingGroup(this, 'WireGuardAutoScalingGroup', {
+        vpc: infrastructureStack.vpc,
+        launchTemplate: launchTemplate,
+        minCapacity: 0,
+        maxCapacity: 1,
+        desiredCapacity: 0, // Start with 0 so we can set up EventBridge first
+        vpcSubnets: {
+          subnetType: ec2.SubnetType.PUBLIC,
+        },
+      });
+
+      // Create EventBridge rule for ASG events (AFTER ASG is created so we can reference it)
       const asgEventRule = new events.Rule(this, 'ASGEventRule', {
         eventPattern: {
           source: ['aws.autoscaling'],
@@ -272,7 +265,75 @@ export class OwnvpnComputeStack extends cdk.Stack {
       // Add Lambda as target for EventBridge rule
       asgEventRule.addTarget(new targets.LambdaFunction(dnsUpdaterLambda));
 
+      // Create a custom resource to set the desired capacity after EventBridge is set up
+      const setDesiredCapacityLambda = new lambda.Function(this, 'SetDesiredCapacityLambda', {
+        runtime: lambda.Runtime.PYTHON_3_12,
+        handler: 'index.handler',
+        code: lambda.Code.fromInline(`
+import boto3
+import json
+import cfnresponse
+
+def handler(event, context):
+    try:
+        if event['RequestType'] == 'Create':
+            autoscaling = boto3.client('autoscaling')
+            asg_name = event['ResourceProperties']['AutoScalingGroupName']
+
+            # Set desired capacity to 1 to launch the instance
+            autoscaling.set_desired_capacity(
+                AutoScalingGroupName=asg_name,
+                DesiredCapacity=1
+            )
+
+            # Also update min capacity to 1
+            autoscaling.update_auto_scaling_group(
+                AutoScalingGroupName=asg_name,
+                MinSize=1
+            )
+
+        cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        cfnresponse.send(event, context, cfnresponse.FAILED, {})
+`),
+        timeout: cdk.Duration.minutes(5),
+      });
+
+      // Grant permissions to update ASG
+      setDesiredCapacityLambda.addToRolePolicy(new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          'autoscaling:SetDesiredCapacity',
+          'autoscaling:UpdateAutoScalingGroup',
+        ],
+        resources: [autoScalingGroup.autoScalingGroupArn],
+      }));
+
+      // Create custom resource that depends on the EventBridge rule
+      const setDesiredCapacityResource = new cdk.CustomResource(this, 'SetDesiredCapacityResource', {
+        serviceToken: setDesiredCapacityLambda.functionArn,
+        properties: {
+          AutoScalingGroupName: autoScalingGroup.autoScalingGroupName,
+        },
+      });
+
+      // Ensure the custom resource depends on the EventBridge rule
+      setDesiredCapacityResource.node.addDependency(asgEventRule);
+
       // Route 53 record will be created and managed by the Lambda function
+    } else {
+      // Create Auto Scaling Group for spot instances (DNS management disabled)
+      autoScalingGroup = new autoscaling.AutoScalingGroup(this, 'WireGuardAutoScalingGroup', {
+        vpc: infrastructureStack.vpc,
+        launchTemplate: launchTemplate,
+        minCapacity: 1,
+        maxCapacity: 1,
+        desiredCapacity: 1,
+        vpcSubnets: {
+          subnetType: ec2.SubnetType.PUBLIC,
+        },
+      });
     }
 
     // Output important information
