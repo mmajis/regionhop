@@ -4,13 +4,17 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { getExportName, getResourceName } from './region-config';
 
+export interface OwnvpnInfrastructureStackProps extends cdk.StackProps {
+  bucketAccessPolicyArn?: string;
+}
+
 export class OwnvpnInfrastructureStack extends cdk.Stack {
   public readonly vpc: ec2.Vpc;
   public readonly securityGroup: ec2.SecurityGroup;
   public readonly keyPair: ec2.KeyPair;
   public readonly serverRole: iam.Role;
 
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+  constructor(scope: Construct, id: string, props: OwnvpnInfrastructureStackProps = {}) {
     super(scope, id, props);
 
     // Get the target region from the stack's environment
@@ -61,6 +65,13 @@ export class OwnvpnInfrastructureStack extends cdk.Stack {
     this.serverRole.addManagedPolicy(
       iam.ManagedPolicy.fromAwsManagedPolicyName('CloudWatchAgentServerPolicy')
     );
+
+    // Add S3 bucket access policy if provided
+    if (props.bucketAccessPolicyArn) {
+      this.serverRole.addManagedPolicy(
+        iam.ManagedPolicy.fromManagedPolicyArn(this, 'S3BucketAccessPolicy', props.bucketAccessPolicyArn)
+      );
+    }
 
     // Create key pair for SSH access
     this.keyPair = new ec2.KeyPair(this, 'WireGuardKeyPair', {

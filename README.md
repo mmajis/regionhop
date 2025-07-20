@@ -53,7 +53,17 @@ WireGuard Server
 Security Group (SSH + WireGuard)
     ↓
 fail2ban + UFW Firewall
+    ↓
+S3 Bucket (Encrypted State Backup)
 ```
+
+### Three-Stack Architecture
+
+The deployment consists of three CDK stacks per region:
+
+1. **Persistence Stack**: Encrypted S3 bucket for WireGuard state backup
+2. **Infrastructure Stack**: VPC, security groups, IAM roles, and SSH key pairs
+3. **Compute Stack**: EC2 instances, Auto Scaling Groups, and Lambda functions
 
 ## 🛠️ Deployment
 
@@ -95,14 +105,16 @@ cdk bootstrap --region eu-central-1
 # Set region environment variable
 export VPN_REGION=eu-central-1
 
-# Deploy the stacks
+# Deploy the stacks (in order)
+cdk deploy OwnVPN-eu-central-1-Persistence
 cdk deploy OwnVPN-eu-central-1-Infrastructure
 cdk deploy OwnVPN-eu-central-1-Compute
 ```
 
 The deployment will:
+- Create an encrypted S3 bucket for state backup per region
 - Create a VPC with public subnet in each region
-- Launch Ubuntu 24.04 LTS EC2 instance
+- Launch Ubuntu 24.04 LTS EC2 instance with S3 access permissions
 - Configure WireGuard server automatically
 - Set up fail2ban and firewall rules
 - Generate server and client keys
@@ -374,12 +386,31 @@ sudo cat /etc/wireguard/clients/CLIENT_NAME/CLIENT_NAME.conf
 
 ## 🔄 Backup and Recovery
 
-### Backup Server Configuration
+### S3 State Backup (Automated)
+
+Each region includes an encrypted S3 bucket for secure state backup. The EC2 instances have permissions to sync WireGuard configurations:
+
 ```bash
-# Create backup directory
+# Backup WireGuard configuration to S3 (automated via cron)
+aws s3 sync /etc/wireguard s3://wireguard-state-backup-REGION/wireguard-config/ --exclude "*.tmp" --delete --region REGION
+
+# Restore WireGuard configuration from S3
+aws s3 sync s3://wireguard-state-backup-REGION/wireguard-config/ /etc/wireguard --delete --region REGION
+```
+
+**Security Features of S3 Backup:**
+- **KMS Encryption**: All data encrypted with region-specific KMS keys
+- **Versioning**: Previous configurations maintained for 30 days
+- **Access Control**: Only EC2 instances with specific IAM roles can access
+- **Block Public Access**: All public access blocked by default
+- **Lifecycle Management**: Automatic transition to cheaper storage classes
+
+### Manual Backup (Local)
+```bash
+# Create local backup directory
 sudo mkdir -p /backup/wireguard
 
-# Backup WireGuard configuration
+# Backup WireGuard configuration locally
 sudo cp -r /etc/wireguard /backup/wireguard/
 sudo cp /etc/fail2ban/jail.local /backup/wireguard/
 sudo cp /etc/ufw/user.rules /backup/wireguard/
@@ -390,10 +421,13 @@ sudo tar -czf /backup/wireguard-backup-$(date +%Y%m%d).tar.gz /backup/wireguard/
 
 ### Restore Configuration
 ```bash
-# Extract backup
+# From S3 (recommended)
+aws s3 sync s3://wireguard-state-backup-REGION/wireguard-config/ /etc/wireguard --delete --region REGION
+
+# From local backup
 sudo tar -xzf wireguard-backup-YYYYMMDD.tar.gz -C /
 
-# Restart services
+# Restart services after restore
 sudo systemctl restart wg-quick@wg0
 sudo systemctl restart fail2ban
 sudo ufw reload
