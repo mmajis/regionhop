@@ -3,7 +3,7 @@ import { Construct } from 'constructs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as kms from 'aws-cdk-lib/aws-kms';
-import { getExportName, getResourceName } from './region-config';
+import { getExportName, getResourceName, getDeploymentId } from './region-config';
 
 export class OwnvpnPersistenceStack extends cdk.Stack {
   public readonly wireguardStateBackupBucket: s3.Bucket;
@@ -14,12 +14,13 @@ export class OwnvpnPersistenceStack extends cdk.Stack {
 
     // Get the target region from the stack's environment
     const targetRegion = this.region;
+    const deploymentId = getDeploymentId();
 
     // Create KMS key for S3 bucket encryption
     this.bucketKmsKey = new kms.Key(this, 'WireGuardStateBackupKmsKey', {
-      description: `KMS key for WireGuard state backup encryption - ${targetRegion}`,
+      description: `KMS key for WireGuard state backup encryption - ${targetRegion} (${deploymentId})`,
       enableKeyRotation: true,
-      alias: getResourceName('wireguard-backup-key', targetRegion),
+      alias: `${getResourceName('wireguard-backup-key', targetRegion)}-${deploymentId}`,
       policy: new iam.PolicyDocument({
         statements: [
           // Allow root account access for key administration
@@ -47,7 +48,7 @@ export class OwnvpnPersistenceStack extends cdk.Stack {
 
     // Create S3 bucket for WireGuard state backup with comprehensive security
     this.wireguardStateBackupBucket = new s3.Bucket(this, 'WireGuardStateBackupBucket', {
-      bucketName: getResourceName('wireguard-state-backup', targetRegion).toLowerCase(),
+      bucketName: `${getResourceName('wireguard-state-backup', targetRegion)}-${deploymentId}`.toLowerCase(),
       
       // Encryption configuration
       encryption: s3.BucketEncryption.KMS,
@@ -115,8 +116,8 @@ export class OwnvpnPersistenceStack extends cdk.Stack {
 
     // Create IAM policy for EC2 instances to access the backup bucket
     const bucketAccessPolicy = new iam.ManagedPolicy(this, 'WireGuardBucketAccessPolicy', {
-      managedPolicyName: getResourceName('wireguard-bucket-access', targetRegion),
-      description: `IAM policy for WireGuard EC2 instances to access state backup bucket - ${targetRegion}`,
+      managedPolicyName: `${getResourceName('wireguard-bucket-access', targetRegion)}-${deploymentId}`,
+      description: `IAM policy for WireGuard EC2 instances to access state backup bucket - ${targetRegion} (${deploymentId})`,
       statements: [
         // S3 bucket permissions
         new iam.PolicyStatement({

@@ -35,5 +35,6 @@
   "vpnSubnet": "10.8.0.0/24",
   "vpnPort": 51820,
   "domain": "majakorpi.net",
-  "dnsRecordTtl": 30
+  "dnsRecordTtl": 30,
+  "deploymentId": "default"
 }

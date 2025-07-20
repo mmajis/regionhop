@@ -15,6 +15,7 @@ export interface RegionConfig {
   domain?: string;
   hostedZoneId?: string;
   dnsRecordTtl?: number;
+  deploymentId?: string;
 }
 
 let regionConfig: RegionConfig | null = null;
@@ -177,4 +178,18 @@ export function isDnsManagementEnabled(): boolean {
 
   // DNS management is enabled by default
   return true;
+}
+
+/**
+ * Get deployment ID from environment or config file
+ * This ensures S3 bucket names are unique across different deployments
+ */
+export function getDeploymentId(): string {
+  const envDeploymentId = process.env.VPN_DEPLOYMENT_ID;
+  if (envDeploymentId) {
+    return envDeploymentId;
+  }
+
+  const config = loadRegionConfig();
+  return config.deploymentId || 'default';
 }

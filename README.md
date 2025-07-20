@@ -105,10 +105,42 @@ cdk bootstrap --region eu-central-1
 # Set region environment variable
 export VPN_REGION=eu-central-1
 
+# Optional: Set deployment ID for unique resource naming (prevents conflicts)
+export VPN_DEPLOYMENT_ID=mydeployment
+
 # Deploy the stacks (in order)
 cdk deploy OwnVPN-eu-central-1-Persistence
 cdk deploy OwnVPN-eu-central-1-Infrastructure
 cdk deploy OwnVPN-eu-central-1-Compute
+```
+
+### Configuration Options
+
+#### Deployment ID (Important for Multiple Deployments)
+The system includes a configurable `deploymentId` to ensure unique S3 bucket names and prevent conflicts when multiple instances of this app are deployed in the same regions:
+
+**Configuration Methods:**
+1. **Environment Variable** (recommended): `export VPN_DEPLOYMENT_ID=myuniqueid`
+2. **Config File**: Edit `deploymentId` in `regions.json` (default: `"default"`)
+
+**Why This Matters:**
+- S3 bucket names must be globally unique across all AWS accounts
+- Without unique deployment IDs, multiple deployments would conflict
+- Each deployment gets its own isolated S3 bucket: `wireguard-state-backup-{region}-{deploymentId}`
+
+**Example Usage:**
+```bash
+# Production deployment
+export VPN_DEPLOYMENT_ID=prod
+./hop.sh deploy us-east-1
+
+# Development deployment
+export VPN_DEPLOYMENT_ID=dev
+./hop.sh deploy us-east-1
+
+# Personal deployment
+export VPN_DEPLOYMENT_ID=personal
+./hop.sh deploy us-east-1
 ```
 
 The deployment will:
