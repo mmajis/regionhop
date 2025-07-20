@@ -49,6 +49,7 @@ const computeStack = new OwnvpnComputeStack(app, getStackName('Compute', targetR
   
   description: `WireGuard VPN Service - Compute Resources (EC2 Instance, Elastic IP) - ${regionInfo?.name}`,
   infrastructureStack: infrastructureStack,
+  s3BucketName: cdk.Fn.importValue(getExportName('StateBackupBucket-Name', targetRegion)),
 });
 
 // Set up stack dependencies

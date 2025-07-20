@@ -126,7 +126,7 @@ The system includes a configurable `deploymentId` to ensure unique S3 bucket nam
 **Why This Matters:**
 - S3 bucket names must be globally unique across all AWS accounts
 - Without unique deployment IDs, multiple deployments would conflict
-- Each deployment gets its own isolated S3 bucket: `wireguard-state-backup-{region}-{deploymentId}`
+- Each deployment gets its own isolated S3 bucket: `regionhop-state-backup-{region}-{deploymentId}`
 
 **Example Usage:**
 ```bash
@@ -424,10 +424,10 @@ Each region includes an encrypted S3 bucket for secure state backup. The EC2 ins
 
 ```bash
 # Backup WireGuard configuration to S3 (automated via cron)
-aws s3 sync /etc/wireguard s3://wireguard-state-backup-REGION/wireguard-config/ --exclude "*.tmp" --delete --region REGION
+aws s3 sync /etc/wireguard s3://regionhop-state-backup-REGION/wireguard-config/ --exclude "*.tmp" --delete --region REGION
 
 # Restore WireGuard configuration from S3
-aws s3 sync s3://wireguard-state-backup-REGION/wireguard-config/ /etc/wireguard --delete --region REGION
+aws s3 sync s3://regionhop-state-backup-REGION/wireguard-config/ /etc/wireguard --delete --region REGION
 ```
 
 **Security Features of S3 Backup:**
@@ -454,7 +454,7 @@ sudo tar -czf /backup/wireguard-backup-$(date +%Y%m%d).tar.gz /backup/wireguard/
 ### Restore Configuration
 ```bash
 # From S3 (recommended)
-aws s3 sync s3://wireguard-state-backup-REGION/wireguard-config/ /etc/wireguard --delete --region REGION
+aws s3 sync s3://regionhop-state-backup-REGION/wireguard-config/ /etc/wireguard --delete --region REGION
 
 # From local backup
 sudo tar -xzf wireguard-backup-YYYYMMDD.tar.gz -C /

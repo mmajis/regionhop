@@ -48,7 +48,7 @@ export class OwnvpnPersistenceStack extends cdk.Stack {
 
     // Create S3 bucket for WireGuard state backup with comprehensive security
     this.wireguardStateBackupBucket = new s3.Bucket(this, 'WireGuardStateBackupBucket', {
-      bucketName: `${getResourceName('wireguard-state-backup', targetRegion)}-${deploymentId}`.toLowerCase(),
+      bucketName: `${getResourceName('regionhop-state-backup', targetRegion)}-${deploymentId}`.toLowerCase(),
       
       // Encryption configuration
       encryption: s3.BucketEncryption.KMS,
