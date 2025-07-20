@@ -49,7 +49,7 @@ export const handler: Handler<EventBridgeEvent<string, any>> = async (event) => 
         console.log(`Processing instance launch: ${ec2InstanceId}`);
         
         // Wait a bit for instance to be fully ready
-        await new Promise(resolve => setTimeout(resolve, 30000)); // 30 seconds
+        await new Promise(resolve => setTimeout(resolve, 10000));
         
         // Get instance public IP and update DNS record
         const publicIp = await getInstancePublicIp(ec2InstanceId);
