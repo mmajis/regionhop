@@ -27,7 +27,7 @@ FORCE_DESTROY=false
 # Infrastructure Management Commands
 cmd_deploy() {
     local target_regions=()
-    
+
     # Parse deploy arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -63,58 +63,58 @@ cmd_deploy() {
                 ;;
         esac
     done
-    
+
     # If no regions specified, use default
     if [ ${#target_regions[@]} -eq 0 ]; then
         target_regions=($(get_default_region))
     fi
-    
+
     # Check prerequisites
     check_prerequisites
     if [ $? -ne 0 ]; then
         exit 1
     fi
-    
+
     deploy_multiple_regions "${target_regions[@]}"
 }
 
 cmd_destroy() {
     local region=$1
     local force=false
-    
+
     if [ "$2" = "--force" ]; then
         force=true
     fi
-    
+
     if [ -z "$region" ]; then
         print_error "Region parameter is required"
         echo "Usage: hop destroy <region> [--force]"
         return 1
     fi
-    
+
     destroy_region "$region" "$force"
 }
 
 cmd_bootstrap() {
     local region=$1
-    
+
     if [ -z "$region" ]; then
         print_error "Region parameter is required"
         echo "Usage: hop bootstrap <region>"
         return 1
     fi
-    
+
     validate_region "$region"
     if [ $? -ne 0 ]; then
         return 1
     fi
-    
+
     # Check prerequisites
     check_prerequisites
     if [ $? -ne 0 ]; then
         return 1
     fi
-    
+
     bootstrap_region "$region"
 }
 
@@ -122,26 +122,26 @@ cmd_bootstrap() {
 cmd_list() {
     print_status "Available regions for VPN deployment:"
     echo
-    
+
     local regions=$(load_regions)
     local default_region=$(get_default_region)
-    
+
     for region in $regions; do
         local region_info=$(get_region_info "$region")
         local region_name=$(echo "$region_info" | jq -r '.name' 2>/dev/null)
         local region_desc=$(echo "$region_info" | jq -r '.description' 2>/dev/null)
-        
+
         if [ "$region" = "$default_region" ]; then
             print_success "$region - $region_name (DEFAULT)"
         else
             echo "  $region - $region_name"
         fi
         echo "    $region_desc"
-        
+
         # Check if region is deployed
         local infra_stack=$(get_stack_name "Infrastructure" "$region")
         local compute_stack=$(get_stack_name "Compute" "$region")
-        
+
         if stack_exists "$infra_stack" "$region" && stack_exists "$compute_stack" "$region"; then
             local vpn_ip=$(get_vpn_server_ip "$region")
             if [ -n "$vpn_ip" ] && [ "$vpn_ip" != "null" ]; then
@@ -159,24 +159,24 @@ cmd_list() {
 cmd_deployed() {
     print_status "Deployed VPN regions:"
     echo
-    
+
     local deployed_regions=$(list_deployed_regions)
     if [ $? -ne 0 ]; then
         return 1
     fi
-    
+
     for region in $deployed_regions; do
         local region_info=$(get_region_info "$region")
         local region_name=$(echo "$region_info" | jq -r '.name' 2>/dev/null)
         local vpn_ip=$(get_vpn_server_ip "$region")
-        
+
         if [ -n "$vpn_ip" ] && [ "$vpn_ip" != "null" ]; then
             print_success "$region - $region_name ($vpn_ip)"
         else
             print_warning "$region - $region_name (IP not available)"
         fi
     done
-    
+
     echo
     print_status "Use 'hop ssh <region>' to connect to a specific region"
 }
@@ -184,15 +184,15 @@ cmd_deployed() {
 cmd_regions() {
     print_status "Available regions:"
     echo
-    
+
     local regions=$(load_regions)
     local default_region=$(get_default_region)
-    
+
     for region in $regions; do
         local region_info=$(get_region_info "$region")
         local region_name=$(echo "$region_info" | jq -r '.name' 2>/dev/null)
         local region_desc=$(echo "$region_info" | jq -r '.description' 2>/dev/null)
-        
+
         if [ "$region" = "$default_region" ]; then
             print_success "$region - $region_name (DEFAULT)"
         else
@@ -205,33 +205,33 @@ cmd_regions() {
 
 cmd_status() {
     local region=$1
-    
+
     if [ -n "$region" ]; then
         # Show status for specific region
         validate_region "$region"
         if [ $? -ne 0 ]; then
             return 1
         fi
-        
+
         show_region_status "$region"
     else
         # Show status for all regions
         print_status "VPN deployment status across all regions:"
         echo
-        
+
         local regions=$(load_regions)
         local found_deployments=false
-        
+
         for region in $regions; do
             local infra_stack=$(get_stack_name "Infrastructure" "$region")
             local compute_stack=$(get_stack_name "Compute" "$region")
-            
+
             if stack_exists "$infra_stack" "$region" || stack_exists "$compute_stack" "$region"; then
                 show_region_status "$region"
                 found_deployments=true
             fi
         done
-        
+
         if [ "$found_deployments" = false ]; then
             print_warning "No VPN deployments found in any region"
         fi
@@ -241,28 +241,28 @@ cmd_status() {
 cmd_health() {
     print_status "Performing health check on all deployed regions..."
     echo
-    
+
     local deployed_regions=$(list_deployed_regions)
     if [ $? -ne 0 ]; then
         return 1
     fi
-    
+
     local healthy_count=0
     local unhealthy_regions=()
-    
+
     for region in $deployed_regions; do
         local region_info=$(get_region_info "$region")
         local region_name=$(echo "$region_info" | jq -r '.name' 2>/dev/null)
-        
+
         print_status "Checking $region ($region_name)..."
-        
+
         # Check if stacks are healthy
         local infra_stack=$(get_stack_name "Infrastructure" "$region")
         local compute_stack=$(get_stack_name "Compute" "$region")
-        
+
         local infra_status=$(get_stack_status "$infra_stack" "$region")
         local compute_status=$(get_stack_status "$compute_stack" "$region")
-        
+
         if [ "$infra_status" = "CREATE_COMPLETE" ] || [ "$infra_status" = "UPDATE_COMPLETE" ]; then
             if [ "$compute_status" = "CREATE_COMPLETE" ] || [ "$compute_status" = "UPDATE_COMPLETE" ]; then
                 local vpn_ip=$(get_vpn_server_ip "$region")
@@ -282,11 +282,11 @@ cmd_health() {
             unhealthy_regions+=("$region")
         fi
     done
-    
+
     echo
     print_status "Health check summary:"
     print_success "Healthy regions: $healthy_count"
-    
+
     if [ ${#unhealthy_regions[@]} -gt 0 ]; then
         print_warning "Unhealthy regions: ${#unhealthy_regions[@]} (${unhealthy_regions[*]})"
     fi
@@ -295,85 +295,85 @@ cmd_health() {
 # Connection & Access Commands
 cmd_ssh() {
     local region=$1
-    
+
     if [ -z "$region" ]; then
         print_error "Region parameter is required"
         echo "Usage: hop ssh <region>"
         return 1
     fi
-    
+
     validate_region "$region"
     if [ $? -ne 0 ]; then
         return 1
     fi
-    
+
     # Check if region is deployed
     local infra_stack=$(get_stack_name "Infrastructure" "$region")
     local compute_stack=$(get_stack_name "Compute" "$region")
-    
+
     if ! stack_exists "$infra_stack" "$region" || ! stack_exists "$compute_stack" "$region"; then
         print_error "VPN service is not deployed in region $region"
         print_status "Available regions:"
         list_deployed_regions 2>/dev/null || print_warning "No regions deployed"
         return 1
     fi
-    
+
     local server_ip=$(get_vpn_server_ip "$region")
     if [ -z "$server_ip" ] || [ "$server_ip" = "null" ]; then
         print_error "Could not retrieve server IP for region $region"
         return 1
     fi
-    
+
     local key_file=$(get_ssh_key "$region")
     if [ $? -ne 0 ]; then
         return 1
     fi
-    
+
     print_status "Connecting to VPN server in $region at $server_ip..."
     ssh -i "$key_file" ubuntu@"$server_ip"
 }
 
 cmd_config() {
     local region=$1
-    
+
     if [ -z "$region" ]; then
         print_error "Region parameter is required"
         echo "Usage: hop config <region>"
         return 1
     fi
-    
+
     validate_region "$region"
     if [ $? -ne 0 ]; then
         return 1
     fi
-    
+
     # Check if region is deployed
     local infra_stack=$(get_stack_name "Infrastructure" "$region")
     local compute_stack=$(get_stack_name "Compute" "$region")
-    
+
     if ! stack_exists "$infra_stack" "$region" || ! stack_exists "$compute_stack" "$region"; then
         print_error "VPN service is not deployed in region $region"
         return 1
     fi
-    
+
     local server_ip=$(get_vpn_server_ip "$region")
     if [ -z "$server_ip" ] || [ "$server_ip" = "null" ]; then
         print_error "Could not retrieve server IP for region $region"
         return 1
     fi
-    
+
     local key_file=$(get_ssh_key "$region")
     if [ $? -ne 0 ]; then
         return 1
     fi
-    
+
     mkdir -p client-configs
     local config_file="client-configs/macos-client-${region}.conf"
-    
+
     print_status "Retrieving client configuration from $region..."
     ssh -i "$key_file" ubuntu@"$server_ip" \
         "sudo cat /etc/wireguard/clients/macos-client/macos-client.conf" > "$config_file"
-    
+
     if [ $? -eq 0 ]; then
         print_success "Client configuration saved as $config_file"
         echo
@@ -391,51 +391,51 @@ cmd_config() {
 cmd_add_client() {
     local region=$1
     local client_name=$2
-    
+
     if [ -z "$region" ] || [ -z "$client_name" ]; then
         print_error "Both region and client name are required"
         echo "Usage: hop add-client <region> <client-name>"
         return 1
     fi
-    
+
     validate_region "$region"
     if [ $? -ne 0 ]; then
         return 1
     fi
-    
+
     # Check if region is deployed
     local infra_stack=$(get_stack_name "Infrastructure" "$region")
     local compute_stack=$(get_stack_name "Compute" "$region")
-    
+
     if ! stack_exists "$infra_stack" "$region" || ! stack_exists "$compute_stack" "$region"; then
         print_error "VPN service is not deployed in region $region"
         return 1
     fi
-    
+
     local server_ip=$(get_vpn_server_ip "$region")
     if [ -z "$server_ip" ] || [ "$server_ip" = "null" ]; then
         print_error "Could not retrieve server IP for region $region"
         return 1
     fi
-    
+
     local key_file=$(get_ssh_key "$region")
     if [ $? -ne 0 ]; then
         return 1
     fi
-    
+
     print_status "Adding new client '$client_name' to region $region..."
     ssh -i "$key_file" ubuntu@"$server_ip" \
         "sudo /etc/wireguard/add-client.sh $client_name"
-    
+
     if [ $? -eq 0 ]; then
         print_success "Client $client_name added successfully to region $region"
         print_status "Downloading client configuration..."
-        
+
         mkdir -p client-configs
         local config_file="client-configs/${client_name}-${region}.conf"
         ssh -i "$key_file" ubuntu@"$server_ip" \
             "sudo cat /etc/wireguard/clients/$client_name/$client_name.conf" > "$config_file"
-        
+
         if [ $? -eq 0 ]; then
             print_success "Client configuration saved as $config_file"
         fi
@@ -443,6 +443,103 @@ cmd_add_client() {
         print_error "Failed to add client to region $region"
         return 1
     fi
+}
+
+# Infrastructure Control Commands
+cmd_start() {
+    local region=$1
+
+    if [ -z "$region" ]; then
+        print_error "Region parameter is required"
+        echo "Usage: hop start <region>"
+        return 1
+    fi
+
+    local asg_name=$(get_asg_name "$region")
+    if [ $? -ne 0 ] || [ -z "$asg_name" ]; then
+        return 1
+    fi
+
+    print_status "Starting VPN server in region $region..."
+    aws autoscaling set-desired-capacity \
+        --auto-scaling-group-name "$asg_name" \
+        --desired-capacity 1 \
+        --region "$region"
+
+    if [ $? -eq 0 ]; then
+        print_success "VPN server start initiated in region $region"
+        print_status "It may take a few minutes for the server to become available"
+        print_status "Use 'hop status $region' to monitor the deployment status"
+    else
+        print_error "Failed to start VPN server in region $region"
+        return 1
+    fi
+}
+
+cmd_stop() {
+    local region=$1
+
+    if [ -z "$region" ]; then
+        print_error "Region parameter is required"
+        echo "Usage: hop stop <region>"
+        return 1
+    fi
+
+    local asg_name=$(get_asg_name "$region")
+    if [ $? -ne 0 ] || [ -z "$asg_name" ]; then
+        return 1
+    fi
+
+    print_status "Stopping VPN server in region $region..."
+    aws autoscaling set-desired-capacity \
+        --auto-scaling-group-name "$asg_name" \
+        --desired-capacity 0 \
+        --region "$region"
+
+    if [ $? -eq 0 ]; then
+        print_success "VPN server stop initiated in region $region"
+        print_status "The server instance will be terminated shortly"
+        print_status "Use 'hop status $region' to monitor the status"
+    else
+        print_error "Failed to stop VPN server in region $region"
+        return 1
+    fi
+}
+
+# Get Auto Scaling Group name for region
+get_asg_name() {
+    local region=$1
+
+    if [ -z "$region" ]; then
+        print_error "Region parameter is required"
+        return 1
+    fi
+
+    validate_region "$region"
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+
+    # Check if region is deployed
+    local compute_stack=$(get_stack_name "Compute" "$region")
+    if ! stack_exists "$compute_stack" "$region"; then
+        print_error "VPN service is not deployed in region $region"
+        return 1
+    fi
+
+    local outputs=$(get_stack_outputs "$compute_stack" "$region")
+    if [ -z "$outputs" ] || [ "$outputs" = "null" ]; then
+        print_error "Could not retrieve compute stack outputs for region $region"
+        return 1
+    fi
+
+    local asg_name=$(echo "$outputs" | jq -r '.[] | select(.OutputKey=="VPNServerAutoScalingGroup") | .OutputValue' 2>/dev/null)
+    if [ -z "$asg_name" ] || [ "$asg_name" = "null" ]; then
+        print_error "Could not retrieve Auto Scaling Group name for region $region"
+        return 1
+    fi
+
+    echo "$asg_name"
 }
 
 #==========================================
@@ -454,35 +551,35 @@ deploy_multiple_regions() {
     local regions=("$@")
     local cost_per_region=15
     local total_cost=$((${#regions[@]} * $cost_per_region))
-    
+
     print_status "Deploying WireGuard VPN to ${#regions[@]} region(s): ${regions[*]}"
     print_warning "This will create AWS resources that may incur charges (~$${total_cost}/month total)."
-    
+
     read -p "Do you want to continue? (y/N) " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
         print_warning "Deployment cancelled."
         exit 0
     fi
-    
+
     install_dependencies
     build_project
-    
+
     local success_count=0
     local failed_regions=()
-    
+
     for region in "${regions[@]}"; do
         print_status "Deploying to region: $region"
-        
+
         if deploy_to_region "$region"; then
             success_count=$((success_count + 1))
         else
             failed_regions+=("$region")
         fi
-        
+
         echo
     done
-    
+
     if [ $success_count -eq ${#regions[@]} ]; then
         print_success "All regions deployed successfully!"
     else
@@ -492,10 +589,10 @@ deploy_multiple_regions() {
             print_error "Failed regions: ${failed_regions[*]}"
         fi
     fi
-    
+
     print_status "Waiting for deployment to complete..."
     sleep 5
-    
+
     # Show final status
     echo
     print_success "🎉 WireGuard VPN Service deployment completed!"
@@ -536,6 +633,8 @@ show_main_help() {
     echo "  deploy --regions r1,r2,r3    Deploy to multiple regions"
     echo "  destroy <region> [--force]   Destroy VPN deployment in region"
     echo "  bootstrap <region>           Bootstrap CDK for region"
+    echo "  start <region>               Start VPN server (set ASG desired capacity to 1)"
+    echo "  stop <region>                Stop VPN server (set ASG desired capacity to 0)"
     echo
     echo "Status & Information:"
     echo "  list                         List all regions with deployment status"
@@ -552,6 +651,8 @@ show_main_help() {
     echo "Examples:"
     echo "  hop deploy                   # Deploy to default region"
     echo "  hop deploy us-east-1         # Deploy to specific region"
+    echo "  hop start eu-central-1       # Start VPN server in EU Central"
+    echo "  hop stop eu-central-1        # Stop VPN server in EU Central"
     echo "  hop list                     # See all regions with status"
     echo "  hop ssh eu-central-1         # Connect to EU server"
     echo "  hop config us-east-1         # Get US East client config"
@@ -596,7 +697,7 @@ legacy_deploy_handler() {
     echo "⚠️  WARNING: deploy.sh is deprecated. Use 'hop deploy' instead."
     echo "   This legacy interface will be removed in a future version."
     echo
-    
+
     # Map legacy deploy.sh arguments to new commands
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -640,7 +741,7 @@ legacy_deploy_handler() {
         esac
         shift
     done
-    
+
     # Default behavior if no args
     check_prerequisites || exit 1
     cmd_deploy
@@ -651,7 +752,7 @@ legacy_connect_handler() {
     echo "⚠️  WARNING: connect.sh is deprecated. Use 'hop' commands instead."
     echo "   This legacy interface will be removed in a future version."
     echo
-    
+
     case "$1" in
         list)
             cmd_deployed
@@ -681,7 +782,7 @@ legacy_region_manager_handler() {
     echo "⚠️  WARNING: region-manager.sh is deprecated. Use 'hop' commands instead."
     echo "   This legacy interface will be removed in a future version."
     echo
-    
+
     case "$1" in
         list)
             cmd_list
@@ -717,7 +818,7 @@ legacy_region_manager_handler() {
 main() {
     # Check for legacy mode first
     detect_legacy_mode "$@"
-    
+
     case "$1" in
         # Infrastructure commands
         deploy)
@@ -732,8 +833,16 @@ main() {
             check_prerequisites || exit 1
             cmd_bootstrap "${@:2}"
             ;;
-        
-        # Status commands  
+        start)
+            check_prerequisites || exit 1
+            cmd_start "${@:2}"
+            ;;
+        stop)
+            check_prerequisites || exit 1
+            cmd_stop "${@:2}"
+            ;;
+
+        # Status commands
         list)
             check_prerequisites || exit 1
             cmd_list "${@:2}"
@@ -753,7 +862,7 @@ main() {
             check_prerequisites || exit 1
             cmd_health "${@:2}"
             ;;
-        
+
         # Connection commands
         ssh)
             check_prerequisites || exit 1
@@ -767,7 +876,7 @@ main() {
             check_prerequisites || exit 1
             cmd_add_client "${@:2}"
             ;;
-        
+
         # Meta commands
         help|--help|-h)
             show_main_help
@@ -775,14 +884,14 @@ main() {
         version|--version|-v)
             echo "Hop v$VERSION"
             ;;
-        
+
         "")
             print_error "No command specified"
             echo
             show_main_help
             exit 1
             ;;
-        
+
         *)
             print_error "Unknown command: $1"
             echo
