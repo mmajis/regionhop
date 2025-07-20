@@ -78,12 +78,6 @@ export class OwnvpnPersistenceStack extends cdk.Stack {
             },
           ],
           // Keep non-current versions for 30 days, then delete
-          noncurrentVersionTransitions: [
-            {
-              storageClass: s3.StorageClass.INFREQUENT_ACCESS,
-              transitionAfter: cdk.Duration.days(7),
-            },
-          ],
           noncurrentVersionExpiration: cdk.Duration.days(30),
           // Delete incomplete multipart uploads after 7 days
           abortIncompleteMultipartUploadAfter: cdk.Duration.days(7),
