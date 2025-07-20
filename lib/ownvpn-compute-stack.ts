@@ -220,7 +220,6 @@ export class OwnvpnComputeStack extends cdk.Stack {
       'echo "Backing up newly created scripts in case they changed..."',
       `aws s3 sync /etc/wireguard s3://${s3BucketName}/wireguard-config/ --exclude "*.tmp" --region ${targetRegion}`,
       'echo "WireGuard VPN server setup completed!"',
-      'echo "Client configuration available at: /etc/wireguard/clients/macos-client/"',
     );
 
     // Create Launch Template for spot instances
