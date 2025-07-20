@@ -2,6 +2,20 @@
 
 A complete AWS CDK implementation of a personal WireGuard VPN service with multi-region support for privacy, security, and geo-unblocking.
 
+## 🎯 Quick Start with Hop
+
+This project now includes **`hop`** - a unified command-line tool that consolidates all VPN management functions into a single, intuitive interface:
+
+```bash
+./hop.sh deploy                    # Deploy VPN to default region
+./hop.sh list                      # See all regions and their status
+./hop.sh ssh eu-central-1          # Connect to your VPN server
+./hop.sh config eu-central-1       # Get client configuration
+./hop.sh destroy us-west-2         # Remove unused regions
+```
+
+**Why Hop?** Previously, this project had 3 separate scripts (`deploy.sh`, `connect.sh`, `region-manager.sh`) which created confusion. Hop unifies all functionality into one tool while maintaining backward compatibility.
+
 ## 🚀 Features
 
 - **Modern VPN Protocol**: WireGuard for high performance and security
@@ -51,25 +65,25 @@ cd ownvpn
 npm install
 ```
 
-### 2. Deploy the Stack
+### 2. Deploy with Hop - The Unified VPN Tool
 
-The service now supports multi-region deployment. Use the deployment script for the easiest setup:
+The service uses **`hop`** - a unified command-line tool that consolidates all VPN management functions:
 
 ```bash
 # Deploy to default region (eu-central-1)
-./deploy.sh
+./hop.sh deploy
 
 # Deploy to specific region
-./deploy.sh --region us-east-1
+./hop.sh deploy us-east-1
 
 # Deploy to multiple regions
-./deploy.sh --regions us-east-1,eu-central-1,ap-southeast-1
+./hop.sh deploy --regions us-east-1,eu-central-1,ap-southeast-1
 
 # List available regions
-./deploy.sh --list-regions
+./hop.sh regions
 
 # Check deployment status
-./deploy.sh --status
+./hop.sh status
 ```
 
 For manual deployment:
@@ -97,20 +111,20 @@ The deployment will:
 
 ### 3. Region Management
 
-Use the region manager for advanced region operations:
+Use hop for all region management operations:
 
 ```bash
 # List all regions with deployment status
-./region-manager.sh list
+./hop.sh list
 
 # Deploy to specific region
-./region-manager.sh deploy us-west-2
+./hop.sh deploy us-west-2
 
 # Destroy region deployment
-./region-manager.sh destroy us-west-2
+./hop.sh destroy us-west-2
 
 # Check health of all deployed regions
-./region-manager.sh health
+./hop.sh health
 ```
 
 ## 📱 Client Setup (macOS)
@@ -123,21 +137,21 @@ Download the official WireGuard app from the Mac App Store.
 
 First, see which regions are deployed:
 ```bash
-./connect.sh list
+./hop.sh deployed
 ```
 
 ### 3. Get Client Configuration
 
-Use the connection helper script to automatically download the client configuration for a specific region:
+Use hop to automatically download the client configuration for a specific region:
 ```bash
 # Get configuration for default region
-./connect.sh config eu-central-1
+./hop.sh config eu-central-1
 
 # Get configuration for US East
-./connect.sh config us-east-1
+./hop.sh config us-east-1
 
 # Get configuration for Asia Pacific
-./connect.sh config ap-southeast-1
+./hop.sh config ap-southeast-1
 ```
 
 This will create a `macos-client-<region>.conf` file that you can directly import into the WireGuard app.
@@ -146,7 +160,7 @@ This will create a `macos-client-<region>.conf` file that you can directly impor
 
 SSH into your server in a specific region:
 ```bash
-./connect.sh ssh eu-central-1
+./hop.sh ssh eu-central-1
 ```
 
 Retrieve your client configuration:
@@ -168,36 +182,38 @@ Click the toggle switch in WireGuard app to connect to your chosen region.
 
 ## 🔧 Management Commands
 
-### Easy Connection Helper
-Use the included connection helper script for region-specific tasks:
+### Hop - Unified VPN Management Tool
+Use the **hop** tool for all VPN management tasks:
 
 ```bash
-# List all deployed regions
-./connect.sh list
+# Infrastructure Management
+./hop.sh deploy                    # Deploy to default region
+./hop.sh deploy us-east-1          # Deploy to specific region
+./hop.sh destroy us-west-2         # Destroy region deployment
+./hop.sh bootstrap ap-northeast-1  # Bootstrap CDK for region
 
-# SSH to specific region
-./connect.sh ssh us-east-1
+# Status & Information
+./hop.sh list                      # List all regions with status
+./hop.sh deployed                  # Show only deployed regions
+./hop.sh regions                   # Show available regions
+./hop.sh status                    # Show deployment status (all regions)
+./hop.sh status us-east-1          # Show status for specific region
+./hop.sh health                    # Health check all deployed regions
 
-# Get client configuration for region
-./connect.sh config eu-central-1
-
-# Check VPN status in region
-./connect.sh status us-west-2
-
-# Add new client to region
-./connect.sh add-client us-east-1 iphone
+# Connection & Access
+./hop.sh ssh us-east-1             # SSH to VPN server in region
+./hop.sh config eu-central-1       # Download client configuration
+./hop.sh add-client us-east-1 iphone # Add new VPN client to region
 ```
 
-### Region Management
+### Quick Reference
 ```bash
-# Deploy new region
-./region-manager.sh deploy ap-northeast-1
-
-# Check status of all regions
-./region-manager.sh status
-
-# Destroy region to save costs
-./region-manager.sh destroy us-west-2
+# Most common commands
+./hop.sh deploy                    # Deploy VPN
+./hop.sh deployed                  # See deployed regions
+./hop.sh ssh eu-central-1          # Connect to server
+./hop.sh config eu-central-1       # Get client config
+./hop.sh destroy us-west-2         # Remove unused region
 ```
 
 ### Manual SSH Access
@@ -309,11 +325,11 @@ sudo wg show
 ### Cost Reduction Tips
 1. Use AWS Free Tier if eligible (first region only)
 2. Deploy only needed regions - destroy unused ones
-3. Use `./region-manager.sh destroy <region>` to remove costly regions
+3. Use `./hop.sh destroy <region>` to remove costly regions
 4. Monitor data transfer costs between regions
 5. Consider t3.nano for lower traffic regions
 6. Use CloudWatch alarms for usage alerts per region
-7. Regularly review deployed regions with `./region-manager.sh status`
+7. Regularly review deployed regions with `./hop.sh status`
 
 ## 🔧 Troubleshooting
 
@@ -418,3 +434,8 @@ Feel free to submit issues and pull requests to improve this WireGuard VPN imple
 ## 📄 License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+---
+**🚀 NEW: Unified Management with Hop**
+This project now includes `hop.sh` - a single, powerful command-line tool that replaces the previous 3-script setup (`deploy.sh`, `connect.sh`, `region-manager.sh`). All old scripts still work via symlinks for backward compatibility, but we recommend using `hop` for the best experience.
+---
