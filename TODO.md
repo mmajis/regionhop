@@ -5,3 +5,4 @@
 * Change macos-client to default-client in client config generation.
   * Or remove default client and require use of `add-client` command.
 * Clean up regions.js
+* Rename to regionhop
