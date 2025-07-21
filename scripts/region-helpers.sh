@@ -35,12 +35,12 @@ command_exists() {
 
 # Get default region
 get_default_region() {
-    if [ ! -f "regions.json" ]; then
+    if [ ! -f "config.json" ]; then
         echo "eu-central-1"
         return
     fi
 
-    cat regions.json | jq -r '.defaultRegion' 2>/dev/null || echo "eu-central-1"
+    cat config.json | jq -r '.defaultRegion' 2>/dev/null || echo "eu-central-1"
 }
 
 
@@ -125,8 +125,8 @@ get_vpn_server_dns() {
         return 1
     fi
 
-    # Get domain from regions.json
-    local domain=$(cat regions.json | jq -r '.domain' 2>/dev/null || echo "majakorpi.net")
+    # Get domain from config.json
+    local domain=$(cat config.json | jq -r '.domain' 2>/dev/null || echo "majakorpi.net")
     echo "${region}.vpn.${domain}"
 }
 

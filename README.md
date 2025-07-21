@@ -121,7 +121,7 @@ The system includes a configurable `deploymentId` to ensure unique S3 bucket nam
 
 **Configuration Methods:**
 1. **Environment Variable** (recommended): `export VPN_DEPLOYMENT_ID=myuniqueid`
-2. **Config File**: Edit `deploymentId` in `regions.json` (default: `"default"`)
+2. **Config File**: Edit `deploymentId` in `config.json` (default: `"default"`)
 
 **Why This Matters:**
 - S3 bucket names must be globally unique across all AWS accounts
@@ -335,7 +335,7 @@ sudo fail2ban-client status sshd
 ## 🛡️ Network Configuration
 
 ### Server Network (Per Region)
-- **VPN Subnet**: 10.8.0.0/24 (configured in regions.json)
+- **VPN Subnet**: 10.8.0.0/24 (configured in config.json)
 - **Server IP**: 10.8.0.1
 - **Client Range**: 10.8.0.2-10.8.0.254
 - **VPN Port**: 51820 (configurable per region)

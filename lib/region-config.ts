@@ -14,11 +14,11 @@ export interface RegionConfig {
 let regionConfig: RegionConfig | null = null;
 
 /**
- * Load region configuration from regions.json
+ * Load region configuration from config.json
  */
 function loadRegionConfig(): RegionConfig {
   if (!regionConfig) {
-    const configPath = path.join(__dirname, '..', 'regions.json');
+    const configPath = path.join(__dirname, '..', 'config.json');
     const configData = fs.readFileSync(configPath, 'utf8');
     regionConfig = JSON.parse(configData);
   }
