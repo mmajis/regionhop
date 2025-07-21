@@ -184,43 +184,68 @@ First, see which regions are deployed:
 ./hop.sh deployed
 ```
 
-### 3. Get Client Configuration
+### 3. Manage VPN Clients
 
-Use hop to automatically download the client configuration for a specific region:
+First, add a VPN client to a region:
 ```bash
-# Get configuration for default region
-./hop.sh config eu-central-1
+# Add a new client (e.g., for your iPhone)
+./hop.sh add-client us-east-1 iphone
 
-# Get configuration for US East
-./hop.sh config us-east-1
-
-# Get configuration for Asia Pacific
-./hop.sh config ap-southeast-1
+# Add another client (e.g., for your laptop)
+./hop.sh add-client us-east-1 laptop
 ```
 
-This will create a `macos-client-<region>.conf` file that you can directly import into the WireGuard app.
+List available clients in a region:
+```bash
+./hop.sh list-clients us-east-1
+```
 
-### 4. Manual Configuration (Advanced)
+### 4. Download Client Configurations
+
+Download specific client configuration:
+```bash
+# Download configuration for a specific client
+./hop.sh download-client us-east-1 iphone
+
+# Download all client configurations from a region
+./hop.sh download-client us-east-1 --all
+```
+
+This will create configuration files like `iphone-us-east-1.conf` that you can directly import into the WireGuard app.
+
+### 5. Legacy Configuration Command (Deprecated)
+
+For backward compatibility, the old `config` command still works but is deprecated:
+```bash
+./hop.sh config eu-central-1  # Downloads first available client
+```
+
+### 6. Manual Configuration (Advanced)
 
 SSH into your server in a specific region:
 ```bash
 ./hop.sh ssh eu-central-1
 ```
 
-Retrieve your client configuration:
+List all clients on the server:
 ```bash
-sudo cat /etc/wireguard/clients/macos-client/macos-client.conf
+sudo find /etc/wireguard/clients -maxdepth 1 -type d -not -path '/etc/wireguard/clients' -exec basename {} \;
 ```
 
-### 5. Import Configuration
+Retrieve a specific client configuration:
+```bash
+sudo cat /etc/wireguard/clients/CLIENT_NAME/CLIENT_NAME.conf
+```
+
+### 7. Import Configuration
 
 1. Open WireGuard app
 2. Click "Import tunnel(s) from file"
-3. Select the `macos-client-<region>.conf` file
+3. Select the `CLIENT_NAME-<region>.conf` file
 4. Import the file
 5. Repeat for each region you want to use
 
-### 6. Connect
+### 8. Connect
 
 Click the toggle switch in WireGuard app to connect to your chosen region.
 
@@ -246,8 +271,11 @@ Use the **hop** tool for all VPN management tasks:
 
 # Connection & Access
 ./hop.sh ssh us-east-1             # SSH to VPN server in region
-./hop.sh config eu-central-1       # Download client configuration
+./hop.sh config eu-central-1       # Download client configuration (deprecated)
 ./hop.sh add-client us-east-1 iphone # Add new VPN client to region
+./hop.sh list-clients us-east-1    # List all VPN clients in region
+./hop.sh download-client us-east-1 iphone  # Download specific client config
+./hop.sh download-client us-east-1 --all   # Download all client configs
 ```
 
 ### Quick Reference

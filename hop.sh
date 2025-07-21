@@ -328,24 +328,218 @@ cmd_config() {
         return 1
     fi
 
-    mkdir -p client-configs
-    local config_file="client-configs/macos-client-${region}.conf"
+    print_warning "The 'config' command is deprecated. Use 'hop download-client <region> <client-name>' instead."
+    print_status "To see available clients, use: hop list-clients $region"
+    echo
+    print_status "For backward compatibility, attempting to download first available client..."
+    
+    # Get list of clients and download the first one found
+    local clients=$(ssh -i "$key_file" ubuntu@"$server_ip" \
+        "sudo find /etc/wireguard/clients -maxdepth 1 -type d -not -path '/etc/wireguard/clients' -exec basename {} \;" 2>/dev/null | sort | head -1)
 
-    print_status "Retrieving client configuration from $region..."
+    if [ -z "$clients" ]; then
+        print_error "No clients found in region $region"
+        print_status "Use 'hop add-client $region <client-name>' to create a client first"
+        return 1
+    fi
+
+    local first_client="$clients"
+    mkdir -p client-configs
+    local config_file="client-configs/${first_client}-${region}.conf"
+
+    print_status "Retrieving client configuration for '$first_client' from $region..."
     ssh -i "$key_file" ubuntu@"$server_ip" \
-        "sudo cat /etc/wireguard/clients/macos-client/macos-client.conf" > "$config_file"
+        "sudo cat /etc/wireguard/clients/$first_client/$first_client.conf" > "$config_file"
 
     if [ $? -eq 0 ]; then
         print_success "Client configuration saved as $config_file"
         echo
         print_status "To import to WireGuard app:"
-        echo "1. Open WireGuard app on macOS"
+        echo "1. Open WireGuard app"
         echo "2. Click 'Import tunnel(s) from file'"
         echo "3. Select the $config_file file"
         echo "4. Click 'Import' and then toggle to connect"
     else
         print_error "Failed to retrieve client configuration from $region"
         return 1
+    fi
+}
+
+cmd_list_clients() {
+    local region=$1
+
+    if [ -z "$region" ]; then
+        print_error "Region parameter is required"
+        echo "Usage: hop list-clients <region>"
+        return 1
+    fi
+
+    validate_region "$region"
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+
+    # Check if region is deployed
+    local infra_stack=$(get_stack_name "Infrastructure" "$region")
+    local compute_stack=$(get_stack_name "Compute" "$region")
+
+    if ! stack_exists "$infra_stack" "$region" || ! stack_exists "$compute_stack" "$region"; then
+        print_error "VPN service is not deployed in region $region"
+        return 1
+    fi
+
+    local server_ip=$(get_vpn_server_ip "$region")
+    if [ -z "$server_ip" ] || [ "$server_ip" = "null" ]; then
+        print_error "Could not retrieve server IP for region $region"
+        return 1
+    fi
+
+    local key_file=$(get_ssh_key "$region")
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+
+    print_status "Listing VPN clients in region $region..."
+    local clients=$(ssh -i "$key_file" ubuntu@"$server_ip" \
+        "sudo find /etc/wireguard/clients -maxdepth 1 -type d -not -path '/etc/wireguard/clients' -exec basename {} \;" 2>/dev/null | sort)
+
+    if [ -z "$clients" ]; then
+        print_warning "No clients found in region $region"
+        return 0
+    fi
+
+    echo "Available clients in $region:"
+    echo "$clients" | while read -r client; do
+        echo "  • $client"
+    done
+}
+
+cmd_download_client() {
+    local region=""
+    local client_name=""
+    local download_all=false
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --all|-a)
+                download_all=true
+                shift
+                ;;
+            --help|-h)
+                show_download_client_help
+                return 0
+                ;;
+            *)
+                if [ -z "$region" ]; then
+                    region="$1"
+                elif [ -z "$client_name" ] && [ "$download_all" = false ]; then
+                    client_name="$1"
+                else
+                    print_error "Unknown option or too many arguments: $1"
+                    show_download_client_help
+                    return 1
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    if [ -z "$region" ]; then
+        print_error "Region parameter is required"
+        show_download_client_help
+        return 1
+    fi
+
+    if [ "$download_all" = false ] && [ -z "$client_name" ]; then
+        print_error "Client name is required unless using --all flag"
+        show_download_client_help
+        return 1
+    fi
+
+    validate_region "$region"
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+
+    # Check if region is deployed
+    local infra_stack=$(get_stack_name "Infrastructure" "$region")
+    local compute_stack=$(get_stack_name "Compute" "$region")
+
+    if ! stack_exists "$infra_stack" "$region" || ! stack_exists "$compute_stack" "$region"; then
+        print_error "VPN service is not deployed in region $region"
+        return 1
+    fi
+
+    local server_ip=$(get_vpn_server_ip "$region")
+    if [ -z "$server_ip" ] || [ "$server_ip" = "null" ]; then
+        print_error "Could not retrieve server IP for region $region"
+        return 1
+    fi
+
+    local key_file=$(get_ssh_key "$region")
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+
+    mkdir -p client-configs
+
+    if [ "$download_all" = true ]; then
+        print_status "Downloading all client configurations from region $region..."
+        
+        # Get list of all clients
+        local clients=$(ssh -i "$key_file" ubuntu@"$server_ip" \
+            "sudo find /etc/wireguard/clients -maxdepth 1 -type d -not -path '/etc/wireguard/clients' -exec basename {} \;" 2>/dev/null)
+
+        if [ -z "$clients" ]; then
+            print_warning "No clients found in region $region"
+            return 0
+        fi
+
+        local download_count=0
+        local failed_count=0
+
+        echo "$clients" | while read -r client; do
+            if [ -n "$client" ]; then
+                local config_file="client-configs/${client}-${region}.conf"
+                
+                if ssh -i "$key_file" ubuntu@"$server_ip" \
+                    "sudo cat /etc/wireguard/clients/$client/$client.conf" > "$config_file" 2>/dev/null; then
+                    print_success "Downloaded: $config_file"
+                    download_count=$((download_count + 1))
+                else
+                    print_error "Failed to download configuration for client: $client"
+                    failed_count=$((failed_count + 1))
+                fi
+            fi
+        done
+
+    else
+        print_status "Downloading client configuration for '$client_name' from region $region..."
+        
+        # Check if client exists
+        if ! ssh -i "$key_file" ubuntu@"$server_ip" \
+            "sudo test -d /etc/wireguard/clients/$client_name" 2>/dev/null; then
+            print_error "Client '$client_name' does not exist in region $region"
+            print_status "Use 'hop list-clients $region' to see available clients"
+            return 1
+        fi
+
+        local config_file="client-configs/${client_name}-${region}.conf"
+        
+        if ssh -i "$key_file" ubuntu@"$server_ip" \
+            "sudo cat /etc/wireguard/clients/$client_name/$client_name.conf" > "$config_file"; then
+            print_success "Client configuration saved as $config_file"
+            echo
+            print_status "To import to WireGuard app:"
+            echo "1. Open WireGuard app"
+            echo "2. Click 'Import tunnel(s) from file'"
+            echo "3. Select the $config_file file"
+            echo "4. Click 'Import' and then toggle to connect"
+        else
+            print_error "Failed to download client configuration for '$client_name'"
+            return 1
+        fi
     fi
 }
 
@@ -606,8 +800,10 @@ show_main_help() {
     echo
     echo "Connection & Access:"
     echo "  ssh <region>                 SSH to VPN server in region"
-    echo "  config <region>              Download client configuration"
+    echo "  config <region>              Download client configuration (deprecated)"
     echo "  add-client <region> <name>   Add new VPN client to region"
+    echo "  list-clients <region>        List all VPN clients in region"
+    echo "  download-client <region> [client-name] [--all|-a]  Download client configuration(s)"
     echo
     echo "Examples:"
     echo "  hop deploy                   # Deploy to default region"
@@ -634,6 +830,27 @@ show_deploy_help() {
     echo "  hop deploy                              # Deploy to default region"
     echo "  hop deploy us-east-1                   # Deploy to specific region"
     echo "  hop deploy --regions us-east-1,eu-central-1  # Deploy to multiple regions"
+}
+
+show_download_client_help() {
+    echo "Usage: hop download-client <region> [client-name] [options]"
+    echo
+    echo "Download VPN client configuration(s) from a region."
+    echo
+    echo "Arguments:"
+    echo "  <region>        AWS region where VPN is deployed"
+    echo "  [client-name]   Name of specific client to download (required unless using --all)"
+    echo
+    echo "Options:"
+    echo "  --all, -a       Download all client configurations from the region"
+    echo "  --help, -h      Show this help message"
+    echo
+    echo "Examples:"
+    echo "  hop download-client us-east-1 iphone    # Download specific client config"
+    echo "  hop download-client us-east-1 --all     # Download all client configs"
+    echo "  hop download-client us-east-1 -a        # Same as above (short flag)"
+    echo
+    echo "Note: Use 'hop list-clients <region>' to see available clients."
 }
 
 #==========================================
@@ -837,6 +1054,14 @@ main() {
         add-client)
             check_prerequisites || exit 1
             cmd_add_client "${@:2}"
+            ;;
+        list-clients)
+            check_prerequisites || exit 1
+            cmd_list_clients "${@:2}"
+            ;;
+        download-client)
+            check_prerequisites || exit 1
+            cmd_download_client "${@:2}"
             ;;
 
         # Meta commands

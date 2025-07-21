@@ -425,8 +425,8 @@ def handler(event, context):
     });
 
     new cdk.CfnOutput(this, 'ClientConfigLocation', {
-      value: '/etc/wireguard/clients/macos-client/macos-client.conf',
-      description: 'Location of client configuration file on server',
+      value: '/etc/wireguard/clients/<CLIENT_NAME>/<CLIENT_NAME>.conf',
+      description: 'Location of client configuration files on server (replace <CLIENT_NAME> with actual client name)',
     });
 
     new cdk.CfnOutput(this, 'VPNStatusCommand', {
