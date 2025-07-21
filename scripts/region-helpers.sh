@@ -32,18 +32,6 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
-# Load regions from regions.json
-load_regions() {
-    if [ ! -f "regions.json" ]; then
-        print_error "regions.json not found" >&2
-        return 1
-    fi
-
-    cat regions.json | jq -r '.supportedRegions[].code' 2>/dev/null || {
-        print_error "Failed to parse regions.json or jq not installed" >&2
-        return 1
-    }
-}
 
 # Get default region
 get_default_region() {
@@ -55,23 +43,8 @@ get_default_region() {
     cat regions.json | jq -r '.defaultRegion' 2>/dev/null || echo "eu-central-1"
 }
 
-# Get region info
-get_region_info() {
-    local region=$1
-    if [ -z "$region" ]; then
-        print_error "Region parameter is required"
-        return 1
-    fi
 
-    if [ ! -f "regions.json" ]; then
-        print_error "regions.json not found"
-        return 1
-    fi
-
-    cat regions.json | jq -r ".supportedRegions[] | select(.code == \"$region\")" 2>/dev/null
-}
-
-# Validate region
+# Validate region (simplified - trust user input and AWS validation)
 validate_region() {
     local region=$1
     if [ -z "$region" ]; then
@@ -79,18 +52,8 @@ validate_region() {
         return 1
     fi
 
-    local supported_regions=$(load_regions)
-    if [ $? -ne 0 ]; then
-        return 1
-    fi
-
-    if echo "$supported_regions" | grep -q "^$region$"; then
-        return 0
-    else
-        print_error "Unsupported region: $region"
-        print_error "Supported regions: $(echo "$supported_regions" | tr '\n' ' ')"
-        return 1
-    fi
+    # No validation - let AWS handle invalid regions during deployment
+    return 0
 }
 
 # Get region-aware stack name
@@ -267,18 +230,21 @@ get_ssh_key() {
     echo "$key_file"
 }
 
-# List deployed regions
+# List deployed regions (discover by checking AWS CloudFormation stacks)
 list_deployed_regions() {
-    local regions=$(load_regions)
-    if [ $? -ne 0 ]; then
+    local deployed_regions=()
+
+    # Get all regions where we might have deployments
+    local all_regions=$(aws ec2 describe-regions --query 'Regions[].RegionName' --output text 2>/dev/null | tr '\t' '\n')
+
+    if [ $? -ne 0 ] || [ -z "$all_regions" ]; then
+        print_error "Failed to get AWS regions list"
         return 1
     fi
 
-    local deployed_regions=()
-
-    for region in $regions; do
-        # Skip empty lines or error messages that might contain brackets
-        if [ -z "$region" ] || [[ "$region" == *"["* ]]; then
+    for region in $all_regions; do
+        # Skip empty lines
+        if [ -z "$region" ]; then
             continue
         fi
 
@@ -312,11 +278,8 @@ show_region_status() {
         return 1
     fi
 
-    local region_info=$(get_region_info "$region")
-    local region_name=$(echo "$region_info" | jq -r '.name' 2>/dev/null)
-
     echo
-    print_status "Status for region: $region ($region_name)"
+    print_status "Status for region: $region"
     echo "============================================="
 
     local infra_stack=$(get_stack_name "Infrastructure" "$region")
@@ -446,22 +409,20 @@ parse_regions() {
         return 1
     fi
 
-    # Split by comma and validate each region
+    # Split by comma - no validation, trust user input
     local regions=($(echo "$regions_string" | tr ',' ' '))
-    local valid_regions=()
+    local clean_regions=()
 
     for region in "${regions[@]}"; do
         # Trim whitespace
         region=$(echo "$region" | xargs)
 
-        if validate_region "$region"; then
-            valid_regions+=("$region")
-        else
-            return 1
+        if [ -n "$region" ]; then
+            clean_regions+=("$region")
         fi
     done
 
-    printf '%s\n' "${valid_regions[@]}"
+    printf '%s\n' "${clean_regions[@]}"
 }
 
 # Destroy region deployment

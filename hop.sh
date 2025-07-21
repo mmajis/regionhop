@@ -120,40 +120,17 @@ cmd_bootstrap() {
 
 # Status & Information Commands
 cmd_list() {
-    print_status "Available regions for VPN deployment:"
+    print_warning "Region listing is no longer available since supportedRegions was removed."
+    print_status "Use 'hop deployed' to see deployed regions, or specify any AWS region directly."
     echo
-
-    local regions=$(load_regions)
-    local default_region=$(get_default_region)
-
-    for region in $regions; do
-        local region_info=$(get_region_info "$region")
-        local region_name=$(echo "$region_info" | jq -r '.name' 2>/dev/null)
-        local region_desc=$(echo "$region_info" | jq -r '.description' 2>/dev/null)
-
-        if [ "$region" = "$default_region" ]; then
-            print_success "$region - $region_name (DEFAULT)"
-        else
-            echo "  $region - $region_name"
-        fi
-        echo "    $region_desc"
-
-        # Check if region is deployed
-        local infra_stack=$(get_stack_name "Infrastructure" "$region")
-        local compute_stack=$(get_stack_name "Compute" "$region")
-
-        if stack_exists "$infra_stack" "$region" && stack_exists "$compute_stack" "$region"; then
-            local vpn_ip=$(get_vpn_server_ip "$region")
-            if [ -n "$vpn_ip" ] && [ "$vpn_ip" != "null" ]; then
-                print_success "    Status: DEPLOYED ($vpn_ip)"
-            else
-                print_warning "    Status: DEPLOYED (IP not available)"
-            fi
-        else
-            echo "    Status: NOT DEPLOYED"
-        fi
-        echo
-    done
+    print_status "Example regions you can use:"
+    echo "  us-east-1      - US East (N. Virginia)"
+    echo "  us-west-2      - US West (Oregon)"
+    echo "  eu-central-1   - Europe (Frankfurt)"
+    echo "  ap-southeast-1 - Asia Pacific (Singapore)"
+    echo "  ap-northeast-1 - Asia Pacific (Tokyo)"
+    echo
+    print_status "For deployed regions: hop deployed"
 }
 
 cmd_deployed() {
@@ -166,14 +143,12 @@ cmd_deployed() {
     fi
 
     for region in $deployed_regions; do
-        local region_info=$(get_region_info "$region")
-        local region_name=$(echo "$region_info" | jq -r '.name' 2>/dev/null)
         local vpn_ip=$(get_vpn_server_ip "$region")
 
         if [ -n "$vpn_ip" ] && [ "$vpn_ip" != "null" ]; then
-            print_success "$region - $region_name ($vpn_ip)"
+            print_success "$region ($vpn_ip)"
         else
-            print_warning "$region - $region_name (IP not available)"
+            print_warning "$region (IP not available)"
         fi
     done
 
@@ -182,25 +157,21 @@ cmd_deployed() {
 }
 
 cmd_regions() {
-    print_status "Available regions:"
+    print_warning "Region listing is no longer available since supportedRegions was removed."
+    print_status "You can now use any valid AWS region directly with hop commands."
     echo
-
-    local regions=$(load_regions)
-    local default_region=$(get_default_region)
-
-    for region in $regions; do
-        local region_info=$(get_region_info "$region")
-        local region_name=$(echo "$region_info" | jq -r '.name' 2>/dev/null)
-        local region_desc=$(echo "$region_info" | jq -r '.description' 2>/dev/null)
-
-        if [ "$region" = "$default_region" ]; then
-            print_success "$region - $region_name (DEFAULT)"
-        else
-            echo "  $region - $region_name"
-        fi
-        echo "    $region_desc"
-        echo
-    done
+    print_status "Popular AWS regions:"
+    echo "  us-east-1      - US East (N. Virginia)"
+    echo "  us-west-1      - US West (N. California)"
+    echo "  us-west-2      - US West (Oregon)"
+    echo "  eu-west-1      - Europe (Ireland)"
+    echo "  eu-central-1   - Europe (Frankfurt)"
+    echo "  ap-southeast-1 - Asia Pacific (Singapore)"
+    echo "  ap-northeast-1 - Asia Pacific (Tokyo)"
+    echo "  ap-south-1     - Asia Pacific (Mumbai)"
+    echo
+    print_status "Default region: $(get_default_region)"
+    print_status "For deployed regions: hop deployed"
 }
 
 cmd_status() {
@@ -215,26 +186,19 @@ cmd_status() {
 
         show_region_status "$region"
     else
-        # Show status for all regions
-        print_status "VPN deployment status across all regions:"
+        # Show status for all deployed regions (discovered automatically)
+        print_status "VPN deployment status across all deployed regions:"
         echo
 
-        local regions=$(load_regions)
-        local found_deployments=false
-
-        for region in $regions; do
-            local infra_stack=$(get_stack_name "Infrastructure" "$region")
-            local compute_stack=$(get_stack_name "Compute" "$region")
-
-            if stack_exists "$infra_stack" "$region" || stack_exists "$compute_stack" "$region"; then
-                show_region_status "$region"
-                found_deployments=true
-            fi
-        done
-
-        if [ "$found_deployments" = false ]; then
+        local deployed_regions=$(list_deployed_regions)
+        if [ $? -ne 0 ]; then
             print_warning "No VPN deployments found in any region"
+            return 1
         fi
+
+        for region in $deployed_regions; do
+            show_region_status "$region"
+        done
     fi
 }
 
@@ -251,10 +215,7 @@ cmd_health() {
     local unhealthy_regions=()
 
     for region in $deployed_regions; do
-        local region_info=$(get_region_info "$region")
-        local region_name=$(echo "$region_info" | jq -r '.name' 2>/dev/null)
-
-        print_status "Checking $region ($region_name)..."
+        print_status "Checking $region..."
 
         # Check if stacks are healthy
         local infra_stack=$(get_stack_name "Infrastructure" "$region")
@@ -637,9 +598,9 @@ show_main_help() {
     echo "  stop <region>                Stop VPN server (set ASG desired capacity to 0)"
     echo
     echo "Status & Information:"
-    echo "  list                         List all regions with deployment status"
+    echo "  list                         Show example regions (supportedRegions removed)"
     echo "  deployed                     Show only deployed regions"
-    echo "  regions                      Show available regions"
+    echo "  regions                      Show example regions (supportedRegions removed)"
     echo "  status [region]              Show deployment status"
     echo "  health                       Health check all deployed regions"
     echo
@@ -653,11 +614,12 @@ show_main_help() {
     echo "  hop deploy us-east-1         # Deploy to specific region"
     echo "  hop start eu-central-1       # Start VPN server in EU Central"
     echo "  hop stop eu-central-1        # Stop VPN server in EU Central"
-    echo "  hop list                     # See all regions with status"
+    echo "  hop deployed                 # See deployed regions"
     echo "  hop ssh eu-central-1         # Connect to EU server"
     echo "  hop config us-east-1         # Get US East client config"
     echo "  hop destroy us-west-2        # Remove US West deployment"
     echo
+    echo "Note: You can now use any valid AWS region. Region validation is handled by AWS."
     echo "For command-specific help: hop <command> --help"
 }
 
