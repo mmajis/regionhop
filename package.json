@@ -1,8 +1,8 @@
 {
-  "name": "ownvpn",
+  "name": "regionhop",
   "version": "0.1.0",
   "bin": {
-    "ownvpn": "bin/ownvpn.js"
+    "regionhop": "bin/regionhop.js"
   },
   "scripts": {
     "build": "tsc",

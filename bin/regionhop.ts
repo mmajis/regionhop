@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import * as cdk from 'aws-cdk-lib';
-import { OwnvpnInfrastructureStack } from '../lib/ownvpn-infrastructure-stack';
-import { OwnvpnComputeStack } from '../lib/ownvpn-compute-stack';
-import { OwnvpnPersistenceStack } from '../lib/ownvpn-persistence-stack';
+import { RegionHopInfrastructureStack } from '../lib/regionhop-infrastructure-stack';
+import { RegionHopComputeStack } from '../lib/regionhop-compute-stack';
+import { RegionHopPersistenceStack } from '../lib/regionhop-persistence-stack';
 import { getTargetRegion, getStackName, getExportName } from '../lib/region-config';
 
 const app = new cdk.App();
@@ -13,7 +13,7 @@ const targetRegion = getTargetRegion();
 console.log(`Deploying to region: ${targetRegion}`);
 
 // Create the persistence stack first (S3 bucket for state backup)
-const persistenceStack = new OwnvpnPersistenceStack(app, getStackName('Persistence', targetRegion), {
+const persistenceStack = new RegionHopPersistenceStack(app, getStackName('Persistence', targetRegion), {
   // Deploy to the target region
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
@@ -24,7 +24,7 @@ const persistenceStack = new OwnvpnPersistenceStack(app, getStackName('Persisten
 });
 
 // Create the infrastructure stack (VPC, security group, IAM role, key pair)
-const infrastructureStack = new OwnvpnInfrastructureStack(app, getStackName('Infrastructure', targetRegion), {
+const infrastructureStack = new RegionHopInfrastructureStack(app, getStackName('Infrastructure', targetRegion), {
   // Deploy to the target region
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
@@ -38,7 +38,7 @@ const infrastructureStack = new OwnvpnInfrastructureStack(app, getStackName('Inf
 });
 
 // Create the compute stack (EC2 instance, Elastic IP) that depends on infrastructure
-const computeStack = new OwnvpnComputeStack(app, getStackName('Compute', targetRegion), {
+const computeStack = new RegionHopComputeStack(app, getStackName('Compute', targetRegion), {
   // Deploy to the target region
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,

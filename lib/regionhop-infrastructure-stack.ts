@@ -4,17 +4,17 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { getExportName, getResourceName } from './region-config';
 
-export interface OwnvpnInfrastructureStackProps extends cdk.StackProps {
+export interface RegionHopInfrastructureStackProps extends cdk.StackProps {
   bucketAccessPolicyArn?: string;
 }
 
-export class OwnvpnInfrastructureStack extends cdk.Stack {
+export class RegionHopInfrastructureStack extends cdk.Stack {
   public readonly vpc: ec2.Vpc;
   public readonly securityGroup: ec2.SecurityGroup;
   public readonly keyPair: ec2.KeyPair;
   public readonly serverRole: iam.Role;
 
-  constructor(scope: Construct, id: string, props: OwnvpnInfrastructureStackProps = {}) {
+  constructor(scope: Construct, id: string, props: RegionHopInfrastructureStackProps = {}) {
     super(scope, id, props);
 
     // Get the target region from the stack's environment

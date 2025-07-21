@@ -66,7 +66,7 @@ get_stack_name() {
         return 1
     fi
 
-    echo "OwnVPN-${region}-${base_name}"
+    echo "RegionHop-${region}-${base_name}"
 }
 
 # Check if stack exists

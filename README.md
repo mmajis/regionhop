@@ -71,7 +71,7 @@ The deployment consists of three CDK stacks per region:
 
 ```bash
 git clone <your-repo>
-cd ownvpn
+cd regionhop
 npm install
 ```
 
@@ -109,9 +109,9 @@ export VPN_REGION=eu-central-1
 export VPN_DEPLOYMENT_ID=mydeployment
 
 # Deploy the stacks (in order)
-cdk deploy OwnVPN-eu-central-1-Persistence
-cdk deploy OwnVPN-eu-central-1-Infrastructure
-cdk deploy OwnVPN-eu-central-1-Compute
+cdk deploy RegionHop-eu-central-1-Persistence
+cdk deploy RegionHop-eu-central-1-Infrastructure
+cdk deploy RegionHop-eu-central-1-Compute
 ```
 
 ### Configuration Options

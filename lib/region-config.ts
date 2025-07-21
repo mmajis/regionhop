@@ -63,14 +63,14 @@ export function getTargetRegion(): string {
  * Get region-aware stack name
  */
 export function getStackName(baseName: string, region: string): string {
-  return `OwnVPN-${region}-${baseName}`;
+  return `RegionHop-${region}-${baseName}`;
 }
 
 /**
  * Get region-aware export name
  */
 export function getExportName(baseName: string, region: string): string {
-  return `OwnVPN-${region}-${baseName}`;
+  return `RegionHop-${region}-${baseName}`;
 }
 
 /**

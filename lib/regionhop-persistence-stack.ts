@@ -5,7 +5,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import { getExportName, getResourceName, getDeploymentId } from './region-config';
 
-export class OwnvpnPersistenceStack extends cdk.Stack {
+export class RegionHopPersistenceStack extends cdk.Stack {
   public readonly wireguardStateBackupBucket: s3.Bucket;
   public readonly bucketKmsKey: kms.Key;
 

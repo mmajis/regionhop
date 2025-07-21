@@ -8,16 +8,16 @@ import * as lambdaNodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as route53 from 'aws-cdk-lib/aws-route53';
-import { OwnvpnInfrastructureStack } from './ownvpn-infrastructure-stack';
+import { RegionHopInfrastructureStack } from './regionhop-infrastructure-stack';
 import { getVpnSubnet, getVpnPort, getDomain, getHostedZoneId, getDnsRecordTtl, getVpnSubdomain, isDnsManagementEnabled } from './region-config';
 
-export interface OwnvpnComputeStackProps extends cdk.StackProps {
-  infrastructureStack: OwnvpnInfrastructureStack;
+export interface RegionHopComputeStackProps extends cdk.StackProps {
+  infrastructureStack: RegionHopInfrastructureStack;
   s3BucketName: string;
 }
 
-export class OwnvpnComputeStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props: OwnvpnComputeStackProps) {
+export class RegionHopComputeStack extends cdk.Stack {
+  constructor(scope: Construct, id: string, props: RegionHopComputeStackProps) {
     super(scope, id, props);
 
     const { infrastructureStack, s3BucketName } = props;
