@@ -334,12 +334,6 @@ def handler(event, context):
                 DesiredCapacity=1
             )
 
-            # Also update min capacity to 1
-            autoscaling.update_auto_scaling_group(
-                AutoScalingGroupName=asg_name,
-                MinSize=1
-            )
-
         cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
     except Exception as e:
         print(f"Error: {str(e)}")
