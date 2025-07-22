@@ -8,13 +8,13 @@ Download the official WireGuard app from the Mac App Store.
 
 ## Step 3: Get SSH Key
 1. Go to AWS Console > EC2 > Key Pairs
-2. Find "wireguard-vpn-key"
+2. Find "regionhop-vpn-key"
 3. Download the private key file (.pem)
 
 ## Step 4: SSH into Server
 ```bash
-chmod 600 wireguard-vpn-key.pem
-ssh -i wireguard-vpn-key.pem ubuntu@63.177.119.32
+chmod 600 regionhop-vpn-key.pem
+ssh -i regionhop-vpn-key.pem ubuntu@63.177.119.32
 ```
 
 ## Step 5: Get Client Configuration

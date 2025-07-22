@@ -3,14 +3,15 @@ import * as cdk from 'aws-cdk-lib';
 import { RegionHopInfrastructureStack } from '../lib/regionhop-infrastructure-stack';
 import { RegionHopComputeStack } from '../lib/regionhop-compute-stack';
 import { RegionHopPersistenceStack } from '../lib/regionhop-persistence-stack';
-import { getTargetRegion, getStackName, getExportName } from '../lib/region-config';
+import { getTargetRegion, getStackName, getExportName, isDnsManagementEnabled, getDomain } from '../lib/region-config';
 
 const app = new cdk.App();
 
 // Get target region from environment variable or default
 const targetRegion = getTargetRegion();
 
-console.log(`Deploying to region: ${targetRegion}`);
+console.log(`Target region: ${targetRegion}`);
+console.log(isDnsManagementEnabled() ? `Using domain: ${getDomain()}` : 'Deploying without domain names');
 
 // Create the persistence stack first (S3 bucket for state backup)
 const persistenceStack = new RegionHopPersistenceStack(app, getStackName('Persistence', targetRegion), {

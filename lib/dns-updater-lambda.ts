@@ -149,7 +149,6 @@ async function findHostedZoneId(domainName: string): Promise<string | undefined>
     const domainParts = domainName.split('.');
     let rootDomain = domainName;
     
-    // For subdomains like "us-east-1.vpn.majakorpi.net", we want "majakorpi.net"
     if (domainParts.length > 2) {
       rootDomain = domainParts.slice(-2).join('.');
     }

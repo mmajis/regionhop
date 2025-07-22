@@ -52,7 +52,7 @@ export function getVpnPort(): number {
  * Get region from environment variable or default
  */
 export function getTargetRegion(): string {
-  const envRegion = process.env.VPN_REGION;
+  const envRegion = process.env.REGIONHOP_REGION;
   if (envRegion) {
     return envRegion;
   }
@@ -85,21 +85,21 @@ export function getResourceName(baseName: string, region: string): string {
 /**
  * Get domain configuration from environment or config file
  */
-export function getDomain(): string {
-  const envDomain = process.env.VPN_DOMAIN;
+export function getDomain(): string | undefined {
+  const envDomain = process.env.REGIONHOP_DOMAIN;
   if (envDomain) {
     return envDomain;
   }
 
   const config = loadRegionConfig();
-  return config.domain || 'majakorpi.net';
+  return config.domain;
 }
 
 /**
  * Get hosted zone ID from environment or config file
  */
 export function getHostedZoneId(): string | undefined {
-  const envHostedZoneId = process.env.VPN_HOSTED_ZONE_ID;
+  const envHostedZoneId = process.env.REGIONHOP_HOSTED_ZONE_ID;
   if (envHostedZoneId) {
     return envHostedZoneId;
   }
@@ -112,7 +112,7 @@ export function getHostedZoneId(): string | undefined {
  * Get DNS record TTL from environment or config file
  */
 export function getDnsRecordTtl(): number {
-  const envTtl = process.env.VPN_DNS_TTL;
+  const envTtl = process.env.REGIONHOP_DNS_TTL;
   if (envTtl) {
     return parseInt(envTtl, 10);
   }
@@ -126,19 +126,21 @@ export function getDnsRecordTtl(): number {
  */
 export function getVpnSubdomain(region: string): string {
   const domain = getDomain();
-  return `${region}.vpn.${domain}`;
+  return `${region}.regionhop.${domain}`;
 }
 
 /**
  * Check if DNS management is enabled
  */
 export function isDnsManagementEnabled(): boolean {
-  const envDisabled = process.env.VPN_DISABLE_DNS;
+  const envDisabled = process.env.REGIONHOP_DISABLE_DNS;
   if (envDisabled && envDisabled.toLowerCase() === 'true') {
     return false;
   }
+  if (getDomain() === undefined || getDomain() === '') {
+    return false;
+  }
 
-  // DNS management is enabled by default
   return true;
 }
 
@@ -147,7 +149,7 @@ export function isDnsManagementEnabled(): boolean {
  * This ensures S3 bucket names are unique across different deployments
  */
 export function getDeploymentId(): string {
-  const envDeploymentId = process.env.VPN_DEPLOYMENT_ID;
+  const envDeploymentId = process.env.REGIONHOP_DEPLOYMENT_ID;
   if (envDeploymentId) {
     return envDeploymentId;
   }

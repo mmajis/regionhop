@@ -103,10 +103,10 @@ For manual deployment:
 cdk bootstrap --region eu-central-1
 
 # Set region environment variable
-export VPN_REGION=eu-central-1
+export REGIONHOP_REGION=eu-central-1
 
 # Optional: Set deployment ID for unique resource naming (prevents conflicts)
-export VPN_DEPLOYMENT_ID=mydeployment
+export REGIONHOP_DEPLOYMENT_ID=mydeployment
 
 # Deploy the stacks (in order)
 cdk deploy RegionHop-eu-central-1-Persistence
@@ -120,7 +120,7 @@ cdk deploy RegionHop-eu-central-1-Compute
 The system includes a configurable `deploymentId` to ensure unique S3 bucket names and prevent conflicts when multiple instances of this app are deployed in the same regions:
 
 **Configuration Methods:**
-1. **Environment Variable** (recommended): `export VPN_DEPLOYMENT_ID=myuniqueid`
+1. **Environment Variable** (recommended): `export REGIONHOP_DEPLOYMENT_ID=myuniqueid`
 2. **Config File**: Edit `deploymentId` in `config.json` (default: `"default"`)
 
 **Why This Matters:**
@@ -131,15 +131,15 @@ The system includes a configurable `deploymentId` to ensure unique S3 bucket nam
 **Example Usage:**
 ```bash
 # Production deployment
-export VPN_DEPLOYMENT_ID=prod
+export REGIONHOP_DEPLOYMENT_ID=prod
 ./hop.sh deploy us-east-1
 
 # Development deployment
-export VPN_DEPLOYMENT_ID=dev
+export REGIONHOP_DEPLOYMENT_ID=dev
 ./hop.sh deploy us-east-1
 
 # Personal deployment
-export VPN_DEPLOYMENT_ID=personal
+export REGIONHOP_DEPLOYMENT_ID=personal
 ./hop.sh deploy us-east-1
 ```
 
@@ -291,7 +291,7 @@ Use the **hop** tool for all VPN management tasks:
 ### Manual SSH Access
 ```bash
 # SSH key files are created per region
-ssh -i wireguard-vpn-key-<region>.pem ubuntu@YOUR_SERVER_IP
+ssh -i regionhop-vpn-key-<region>.pem ubuntu@YOUR_SERVER_IP
 ```
 
 ### Server Management Commands

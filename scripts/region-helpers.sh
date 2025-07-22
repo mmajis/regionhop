@@ -116,20 +116,6 @@ get_stack_outputs() {
         --output json 2>/dev/null
 }
 
-# Get VPN server DNS name for region
-get_vpn_server_dns() {
-    local region=$1
-
-    if [ -z "$region" ]; then
-        print_error "Region parameter is required"
-        return 1
-    fi
-
-    # Get domain from config.json
-    local domain=$(cat config.json | jq -r '.domain' 2>/dev/null || echo "majakorpi.net")
-    echo "${region}.vpn.${domain}"
-}
-
 # Get VPN server IP (now uses DNS resolution)
 get_vpn_server_ip() {
     local region=$1
@@ -171,15 +157,6 @@ get_vpn_server_ip() {
         echo "$dns_domain"
         return 0
     fi
-
-    # Fallback: try to get IP from stack outputs (legacy behavior)
-    local stack_ip=$(echo "$outputs" | jq -r '.[] | select(.OutputKey=="VPNServerIP") | .OutputValue' 2>/dev/null)
-    if [ -n "$stack_ip" ] && [ "$stack_ip" != "null" ] && [ "$stack_ip" != "Dynamic IP - Check DNS record or ASG instances" ]; then
-        echo "$stack_ip"
-    else
-        # Last resort: return the DNS name
-        get_vpn_server_dns "$region"
-    fi
 }
 
 # Get SSH key for region
@@ -191,7 +168,7 @@ get_ssh_key() {
         return 1
     fi
 
-    local key_file="wireguard-vpn-key-${region}.pem"
+    local key_file="regionhop-vpn-key-${region}.pem"
 
     if [ ! -f "$key_file" ]; then
         print_status "SSH key not found for region $region. Retrieving from AWS Systems Manager..."
@@ -455,7 +432,7 @@ destroy_region() {
     fi
 
     # Set region environment variable for CDK
-    export VPN_REGION="$region"
+    export REGIONHOP_REGION="$region"
 
     npx cdk destroy --all --require-approval never --force
 
@@ -465,7 +442,7 @@ destroy_region() {
     fi
 
     # Clean up SSH key file
-    local key_file="wireguard-vpn-key-${region}.pem"
+    local key_file="regionhop-vpn-key-${region}.pem"
     if [ -f "$key_file" ]; then
         rm -f "$key_file"
         print_status "Cleaned up SSH key file: $key_file"
@@ -497,7 +474,7 @@ deploy_to_region() {
     fi
 
     # Set region environment variable for CDK
-    export VPN_REGION="$region"
+    export REGIONHOP_REGION="$region"
 
     npx cdk deploy --all --require-approval never
 
