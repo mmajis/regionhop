@@ -200,6 +200,19 @@ List available clients in a region:
 ./hop.sh list-clients us-east-1
 ```
 
+Remove a client when no longer needed:
+```bash
+# Remove a specific client (will prompt for confirmation)
+./hop.sh remove-client us-east-1 old-phone
+
+# This will:
+# • Remove client configuration files from server
+# • Remove client keys and certificates
+# • Remove peer configuration from WireGuard
+# • Update S3 backup to reflect changes
+# • Clean up local config files
+```
+
 ### 4. Download Client Configurations
 
 Download specific client configuration:
@@ -273,6 +286,7 @@ Use the **hop** tool for all VPN management tasks:
 ./hop.sh ssh us-east-1             # SSH to VPN server in region
 ./hop.sh config eu-central-1       # Download client configuration (deprecated)
 ./hop.sh add-client us-east-1 iphone # Add new VPN client to region
+./hop.sh remove-client us-east-1 oldphone # Remove VPN client from region
 ./hop.sh list-clients us-east-1    # List all VPN clients in region
 ./hop.sh download-client us-east-1 iphone  # Download specific client config
 ./hop.sh download-client us-east-1 --all   # Download all client configs
@@ -303,6 +317,9 @@ sudo /etc/wireguard/vpn-status.sh
 
 # Add New Client
 sudo /etc/wireguard/add-client.sh client-name
+
+# Remove Client
+sudo /etc/wireguard/remove-client.sh client-name
 
 # View Connected Clients
 sudo wg show

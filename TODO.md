@@ -3,3 +3,4 @@
 
     Note that client IP addresses are now based on counting the number of clients and incrementing by one (in the add-client.sh written to the server by the userdata script). This needs to be improved so that IPs don't conflict when a client is removed and a new one is added. Perhaps we need to list all the IPs in use and assign the next available one?
 * Health check and status should check the actual VPN service instead of CloudFormation stack status and IP availability. One command is enough for this, remove the other.
+* Create the server scripts as actual files in the repo instead of crazy printf userdata script stuff.

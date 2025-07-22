@@ -610,6 +610,87 @@ cmd_add_client() {
     fi
 }
 
+cmd_remove_client() {
+    local region=$1
+    local client_name=$2
+
+    if [ -z "$region" ] || [ -z "$client_name" ]; then
+        print_error "Both region and client name are required"
+        echo "Usage: hop remove-client <region> <client-name>"
+        return 1
+    fi
+
+    validate_region "$region"
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+
+    # Check if region is deployed
+    local infra_stack=$(get_stack_name "Infrastructure" "$region")
+    local compute_stack=$(get_stack_name "Compute" "$region")
+
+    if ! stack_exists "$infra_stack" "$region" || ! stack_exists "$compute_stack" "$region"; then
+        print_error "VPN service is not deployed in region $region"
+        return 1
+    fi
+
+    local server_ip=$(get_vpn_server_ip "$region")
+    if [ -z "$server_ip" ] || [ "$server_ip" = "null" ]; then
+        print_error "Could not retrieve server IP for region $region"
+        return 1
+    fi
+
+    local key_file=$(get_ssh_key "$region")
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+
+    # Check if client exists first
+    print_status "Checking if client '$client_name' exists in region $region..."
+    if ! ssh -i "$key_file" ubuntu@"$server_ip" \
+        "sudo test -d /etc/wireguard/clients/$client_name" 2>/dev/null; then
+        print_error "Client '$client_name' does not exist in region $region"
+        print_status "Use 'hop list-clients $region' to see available clients"
+        return 1
+    fi
+
+    # Confirm removal
+    echo
+    print_warning "This will permanently remove client '$client_name' from region $region"
+    print_warning "The following will be deleted:"
+    echo "  • Client configuration files"
+    echo "  • Client private/public keys"
+    echo "  • WireGuard peer configuration"
+    echo "  • S3 backup data"
+    echo
+    read -p "Are you sure you want to continue? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        print_status "Client removal cancelled"
+        return 0
+    fi
+
+    print_status "Removing client '$client_name' from region $region..."
+    ssh -i "$key_file" ubuntu@"$server_ip" \
+        "sudo /etc/wireguard/remove-client.sh $client_name"
+
+    if [ $? -eq 0 ]; then
+        print_success "Client '$client_name' removed successfully from region $region"
+        echo
+        print_status "The client configuration is no longer valid and should be removed from client devices"
+        
+        # Clean up local config file if it exists
+        local config_file="client-configs/${client_name}-${region}.conf"
+        if [ -f "$config_file" ]; then
+            print_status "Removing local configuration file: $config_file"
+            rm -f "$config_file"
+        fi
+    else
+        print_error "Failed to remove client '$client_name' from region $region"
+        return 1
+    fi
+}
+
 # Infrastructure Control Commands
 cmd_start() {
     local region=$1
@@ -801,6 +882,7 @@ show_main_help() {
     echo "  ssh <region>                 SSH to VPN server in region"
     echo "  config <region>              Download client configuration (deprecated)"
     echo "  add-client <region> <name>   Add new VPN client to region"
+    echo "  remove-client <region> <name> Remove VPN client from region"
     echo "  list-clients <region>        List all VPN clients in region"
     echo "  download-client <region> [client-name] [--all|-a]  Download client configuration(s)"
     echo
@@ -913,6 +995,10 @@ main() {
         add-client)
             check_prerequisites || exit 1
             cmd_add_client "${@:2}"
+            ;;
+        remove-client)
+            check_prerequisites || exit 1
+            cmd_remove_client "${@:2}"
             ;;
         list-clients)
             check_prerequisites || exit 1
