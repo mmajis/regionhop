@@ -1,9 +1,4 @@
 #!/bin/bash
-
-# Hop - Unified WireGuard VPN Management Tool
-# Consolidates deploy.sh, region-manager.sh, and connect.sh into a single interface
-# Usage: ./hop <command> [options] [arguments]
-
 set -e
 
 VERSION="1.0.0"
@@ -332,7 +327,7 @@ cmd_config() {
     print_status "To see available clients, use: hop list-clients $region"
     echo
     print_status "For backward compatibility, attempting to download first available client..."
-    
+
     # Get list of clients and download the first one found
     local clients=$(ssh -i "$key_file" ubuntu@"$server_ip" \
         "sudo find /etc/wireguard/clients -maxdepth 1 -type d -not -path '/etc/wireguard/clients' -exec basename {} \;" 2>/dev/null | sort | head -1)
@@ -400,9 +395,24 @@ cmd_list_clients() {
     fi
 
     print_status "Listing VPN clients in region $region..."
-    local clients=$(ssh -i "$key_file" ubuntu@"$server_ip" \
-        "sudo find /etc/wireguard/clients -maxdepth 1 -type d -not -path '/etc/wireguard/clients' -exec basename {} \;" 2>/dev/null | sort)
 
+    # Execute SSH command without command substitution to properly capture exit code
+    local temp_file=$(mktemp)
+    # Temporarily disable exit on error to capture SSH exit code
+    set +e
+    ssh -i "$key_file" ubuntu@"$server_ip" \
+        "sudo find /etc/wireguard/clients -maxdepth 1 -type d -not -path '/etc/wireguard/clients' -exec basename {} \;" 2>/dev/null > "$temp_file"
+    local ssh_exit_code=$?
+    set -e
+    if [ $ssh_exit_code -ne 0 ]; then
+        rm -f "$temp_file"
+        print_error "Failed to connect to VPN server in region $region or execute remote command"
+        return 1
+    fi
+    # Sort the output after successful SSH
+    local clients=$(sort "$temp_file")
+    rm -f "$temp_file"
+    echo $clients
     if [ -z "$clients" ]; then
         print_warning "No clients found in region $region"
         return 0
@@ -486,7 +496,7 @@ cmd_download_client() {
 
     if [ "$download_all" = true ]; then
         print_status "Downloading all client configurations from region $region..."
-        
+
         # Get list of all clients
         local clients=$(ssh -i "$key_file" ubuntu@"$server_ip" \
             "sudo find /etc/wireguard/clients -maxdepth 1 -type d -not -path '/etc/wireguard/clients' -exec basename {} \;" 2>/dev/null)
@@ -502,7 +512,7 @@ cmd_download_client() {
         echo "$clients" | while read -r client; do
             if [ -n "$client" ]; then
                 local config_file="client-configs/${client}-${region}.conf"
-                
+
                 if ssh -i "$key_file" ubuntu@"$server_ip" \
                     "sudo cat /etc/wireguard/clients/$client/$client.conf" > "$config_file" 2>/dev/null; then
                     print_success "Downloaded: $config_file"
@@ -516,7 +526,7 @@ cmd_download_client() {
 
     else
         print_status "Downloading client configuration for '$client_name' from region $region..."
-        
+
         # Check if client exists
         if ! ssh -i "$key_file" ubuntu@"$server_ip" \
             "sudo test -d /etc/wireguard/clients/$client_name" 2>/dev/null; then
@@ -526,7 +536,7 @@ cmd_download_client() {
         fi
 
         local config_file="client-configs/${client_name}-${region}.conf"
-        
+
         if ssh -i "$key_file" ubuntu@"$server_ip" \
             "sudo cat /etc/wireguard/clients/$client_name/$client_name.conf" > "$config_file"; then
             print_success "Client configuration saved as $config_file"
@@ -843,150 +853,10 @@ show_download_client_help() {
 }
 
 #==========================================
-# LEGACY COMPATIBILITY
-#==========================================
-
-# Check if script was called via legacy symlinks
-detect_legacy_mode() {
-    case "${0##*/}" in
-        "deploy.sh")
-            legacy_deploy_handler "$@"
-            ;;
-        "connect.sh")
-            legacy_connect_handler "$@"
-            ;;
-        "region-manager.sh")
-            legacy_region_manager_handler "$@"
-            ;;
-    esac
-}
-
-legacy_deploy_handler() {
-    echo "⚠️  WARNING: deploy.sh is deprecated. Use 'hop deploy' instead."
-    echo "   This legacy interface will be removed in a future version."
-    echo
-
-    # Map legacy deploy.sh arguments to new commands
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            --region)
-                check_prerequisites || exit 1
-                cmd_deploy "$2"
-                exit 0
-                ;;
-            --regions)
-                check_prerequisites || exit 1
-                cmd_deploy --regions "$2"
-                exit 0
-                ;;
-            --list-regions)
-                cmd_regions
-                exit 0
-                ;;
-            --status)
-                check_prerequisites || exit 1
-                cmd_status
-                exit 0
-                ;;
-            --destroy)
-                check_prerequisites || exit 1
-                if [ -n "$2" ] && [ "$2" != "--region" ]; then
-                    shift
-                fi
-                if [ "$1" = "--region" ]; then
-                    cmd_destroy "$2"
-                else
-                    print_error "Region required for destroy operation"
-                fi
-                exit 0
-                ;;
-            *)
-                # Default behavior - deploy
-                check_prerequisites || exit 1
-                cmd_deploy
-                exit 0
-                ;;
-        esac
-        shift
-    done
-
-    # Default behavior if no args
-    check_prerequisites || exit 1
-    cmd_deploy
-    exit 0
-}
-
-legacy_connect_handler() {
-    echo "⚠️  WARNING: connect.sh is deprecated. Use 'hop' commands instead."
-    echo "   This legacy interface will be removed in a future version."
-    echo
-
-    case "$1" in
-        list)
-            cmd_deployed
-            ;;
-        ssh)
-            cmd_ssh "$2"
-            ;;
-        config)
-            cmd_config "$2"
-            ;;
-        status)
-            cmd_status "$2"
-            ;;
-        add-client)
-            cmd_add_client "$2" "$3"
-            ;;
-        "")
-            cmd_deployed
-            ;;
-        *)
-            print_error "Unknown command: $1"
-            ;;
-    esac
-}
-
-legacy_region_manager_handler() {
-    echo "⚠️  WARNING: region-manager.sh is deprecated. Use 'hop' commands instead."
-    echo "   This legacy interface will be removed in a future version."
-    echo
-
-    case "$1" in
-        list)
-            cmd_list
-            ;;
-        deployed)
-            cmd_deployed
-            ;;
-        deploy)
-            cmd_deploy "$2"
-            ;;
-        destroy)
-            cmd_destroy "$2"
-            ;;
-        status)
-            cmd_status "$2"
-            ;;
-        bootstrap)
-            cmd_bootstrap "$2"
-            ;;
-        health)
-            cmd_health
-            ;;
-        *)
-            print_error "Unknown command: $1"
-            ;;
-    esac
-}
-
-#==========================================
 # MAIN ENTRY POINT
 #==========================================
 
 main() {
-    # Check for legacy mode first
-    detect_legacy_mode "$@"
-
     case "$1" in
         # Infrastructure commands
         deploy)

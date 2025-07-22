@@ -171,7 +171,7 @@ get_ssh_key() {
     local key_file="regionhop-vpn-key-${region}.pem"
 
     if [ ! -f "$key_file" ]; then
-        print_status "SSH key not found for region $region. Retrieving from AWS Systems Manager..."
+        # print_status "SSH key not found for region $region. Retrieving from AWS Systems Manager..."
 
         local infra_stack=$(get_stack_name "Infrastructure" "$region")
         local outputs=$(get_stack_outputs "$infra_stack" "$region")
@@ -197,7 +197,7 @@ get_ssh_key() {
 
         if [ $? -eq 0 ]; then
             chmod 600 "$key_file"
-            print_success "SSH key retrieved and saved as $key_file"
+            # print_success "SSH key retrieved and saved as $key_file"
             sync  # Ensure the file is written to disk
         else
             print_error "Failed to retrieve SSH key for region $region"
