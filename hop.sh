@@ -705,7 +705,7 @@ get_asg_name() {
 deploy_multiple_regions() {
     local regions=("$@")
 
-    print_status "Deploying WireGuard VPN to ${#regions[@]} region(s): ${regions[*]}"
+    print_status "Deploying RegionHop VPN to ${#regions[@]} region(s): ${regions[*]}"
 
     install_dependencies
     build_project
