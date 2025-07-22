@@ -219,7 +219,7 @@ export class RegionHopComputeStack extends cdk.Stack {
       '',
       'echo "Backing up newly created scripts in case they changed..."',
       `aws s3 sync /etc/wireguard s3://${s3BucketName}/wireguard-config/ --exclude "*.tmp" --region ${targetRegion}`,
-      'echo "WireGuard VPN server setup completed!"',
+      'echo "RegionHop VPN server setup completed!"',
     );
 
     // Create Launch Template for spot instances
@@ -375,9 +375,8 @@ def handler(event, context):
       autoScalingGroup = new autoscaling.AutoScalingGroup(this, 'WireGuardAutoScalingGroup', {
         vpc: infrastructureStack.vpc,
         launchTemplate: launchTemplate,
-        minCapacity: 1,
+        minCapacity: 0,
         maxCapacity: 1,
-        desiredCapacity: 1,
         vpcSubnets: {
           subnetType: ec2.SubnetType.PUBLIC,
         },

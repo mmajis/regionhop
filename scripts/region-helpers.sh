@@ -221,6 +221,7 @@ get_ssh_key() {
         if [ $? -eq 0 ]; then
             chmod 600 "$key_file"
             print_success "SSH key retrieved and saved as $key_file"
+            sync  # Ensure the file is written to disk
         else
             print_error "Failed to retrieve SSH key for region $region"
             return 1

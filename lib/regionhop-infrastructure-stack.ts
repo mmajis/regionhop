@@ -2,7 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
-import { getExportName, getResourceName } from './region-config';
+import { getExportName, getResourceName, getVpnPort } from './region-config';
 
 export interface RegionHopInfrastructureStackProps extends cdk.StackProps {
   bucketAccessPolicyArn?: string;
@@ -21,7 +21,7 @@ export class RegionHopInfrastructureStack extends cdk.Stack {
     const targetRegion = this.region;
 
     // Create VPC with public subnet for VPN server
-    this.vpc = new ec2.Vpc(this, 'WireGuardVPC', {
+    this.vpc = new ec2.Vpc(this, 'VPC', {
       maxAzs: 1, // Single AZ for cost optimization
       natGateways: 0, // No NAT gateway needed for public subnet
       subnetConfiguration: [
@@ -33,12 +33,11 @@ export class RegionHopInfrastructureStack extends cdk.Stack {
       ],
     });
 
-    // Security group for WireGuard VPN server
-    this.securityGroup = new ec2.SecurityGroup(this, 'WireGuardSecurityGroup', {
+    this.securityGroup = new ec2.SecurityGroup(this, 'VPNServerSecurityGroup', {
       vpc: this.vpc,
-      description: `Security group for WireGuard VPN server - ${targetRegion}`,
+      description: `Security group for RegionHop VPN server - ${targetRegion}`,
       allowAllOutbound: true,
-      securityGroupName: getResourceName('WireGuard', targetRegion) + '-SG',
+      securityGroupName: getResourceName('RegionHop', targetRegion) + '-SG',
     });
 
     // Allow SSH access (port 22) for administration
@@ -48,17 +47,25 @@ export class RegionHopInfrastructureStack extends cdk.Stack {
       'SSH access for server administration'
     );
 
-    // Allow WireGuard VPN traffic (UDP 51820)
+    // Allow WireGuard VPN traffic from anywhere on the internet
+    // Security Note: WireGuard uses strong cryptographic authentication,
+    // making it safe to expose to 0.0.0.0/0. Only authenticated peers can connect.
+    const vpnPort = this.getValidatedVpnPort();
     this.securityGroup.addIngressRule(
       ec2.Peer.anyIpv4(),
-      ec2.Port.udp(51820),
-      'WireGuard VPN traffic'
+      ec2.Port.udp(vpnPort),
+      `WireGuard VPN traffic on port ${vpnPort}`
     );
 
+    // Add resource tags for better management and cost tracking
+    cdk.Tags.of(this.securityGroup).add('Purpose', 'RegionHop-VPN');
+    cdk.Tags.of(this.securityGroup).add('Protocol', 'WireGuard');
+    cdk.Tags.of(this.securityGroup).add('Port', vpnPort.toString());
+
     // Create IAM role for EC2 instance
-    this.serverRole = new iam.Role(this, 'WireGuardServerRole', {
+    this.serverRole = new iam.Role(this, 'VPNServerRole', {
       assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
-      description: `IAM role for WireGuard VPN server - ${targetRegion}`,
+      description: `IAM role for RegionHop VPN server - ${targetRegion}`,
     });
 
     // Add CloudWatch agent permissions for monitoring
@@ -74,8 +81,8 @@ export class RegionHopInfrastructureStack extends cdk.Stack {
     }
 
     // Create key pair for SSH access
-    this.keyPair = new ec2.KeyPair(this, 'WireGuardKeyPair', {
-      keyPairName: getResourceName('wireguard-vpn-key', targetRegion),
+    this.keyPair = new ec2.KeyPair(this, 'SSHKeyPair', {
+      keyPairName: getResourceName('regionhop-vpn-key', targetRegion),
       type: ec2.KeyPairType.RSA,
       format: ec2.KeyPairFormat.PEM,
     });
@@ -83,13 +90,13 @@ export class RegionHopInfrastructureStack extends cdk.Stack {
     // Outputs for cross-stack references
     new cdk.CfnOutput(this, 'VPCId', {
       value: this.vpc.vpcId,
-      description: `VPC ID for WireGuard VPN - ${targetRegion}`,
+      description: `VPC ID for RegionHop VPN - ${targetRegion}`,
       exportName: getExportName('VPC-ID', targetRegion),
     });
 
     new cdk.CfnOutput(this, 'SecurityGroupId', {
       value: this.securityGroup.securityGroupId,
-      description: `Security Group ID for WireGuard VPN - ${targetRegion}`,
+      description: `Security Group ID for RegionHop VPN - ${targetRegion}`,
       exportName: getExportName('SecurityGroup-ID', targetRegion),
     });
 
@@ -115,5 +122,37 @@ export class RegionHopInfrastructureStack extends cdk.Stack {
       value: `aws ssm get-parameter --name /ec2/keypair/${this.keyPair.keyPairId} --with-decryption --query Parameter.Value --output text --region ${targetRegion} > ${this.keyPair.keyPairName}.pem && chmod 600 ${this.keyPair.keyPairName}.pem`,
       description: 'Command to retrieve the private key from AWS Systems Manager',
     });
+  }
+
+  /**
+   * Validates and returns the VPN port from configuration
+   * @returns The validated VPN port number
+   * @throws Error if port is invalid
+   */
+  private getValidatedVpnPort(): number {
+    try {
+      const port = getVpnPort();
+
+      // Validate port range (1-65535, avoiding well-known ports below 1024)
+      if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+        throw new Error(`Invalid VPN port: ${port}. Port must be between 1024-65535`);
+      }
+
+      // Additional validation for common WireGuard ports
+      if (port !== 51820 && (port < 51800 || port > 51830)) {
+        cdk.Annotations.of(this).addWarning(
+          `Non-standard WireGuard port ${port} detected. Standard port is 51820.`
+        );
+      }
+
+      return port;
+    } catch (error) {
+      // Fallback to standard WireGuard port with warning
+      const fallbackPort = 51820;
+      cdk.Annotations.of(this).addWarning(
+        `Failed to load VPN port configuration: ${error}. Using fallback port ${fallbackPort}`
+      );
+      return fallbackPort;
+    }
   }
 }

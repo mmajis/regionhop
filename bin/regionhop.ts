@@ -20,7 +20,7 @@ const persistenceStack = new RegionHopPersistenceStack(app, getStackName('Persis
     region: targetRegion
   },
   
-  description: `WireGuard VPN Service - Persistence (S3 State Backup) - ${targetRegion}`,
+  description: `RegionHop VPN Service - Persistence - ${targetRegion}`,
 });
 
 // Create the infrastructure stack (VPC, security group, IAM role, key pair)
@@ -31,7 +31,7 @@ const infrastructureStack = new RegionHopInfrastructureStack(app, getStackName('
     region: targetRegion
   },
   
-  description: `WireGuard VPN Service - Infrastructure (VPC, Security Group, IAM Role, Key Pair) - ${targetRegion}`,
+  description: `RegionHop VPN Service - Infrastructure - ${targetRegion}`,
   
   // Pass the S3 bucket access policy ARN from persistence stack
   bucketAccessPolicyArn: cdk.Fn.importValue(getExportName('BucketAccessPolicy-ARN', targetRegion)),
@@ -45,7 +45,7 @@ const computeStack = new RegionHopComputeStack(app, getStackName('Compute', targ
     region: targetRegion
   },
   
-  description: `WireGuard VPN Service - Compute Resources (EC2 Instance, Elastic IP) - ${targetRegion}`,
+  description: `RegionHop VPN Service - Compute - ${targetRegion}`,
   infrastructureStack: infrastructureStack,
   s3BucketName: cdk.Fn.importValue(getExportName('StateBackupBucket-Name', targetRegion)),
 });
