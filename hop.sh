@@ -746,7 +746,6 @@ deploy_multiple_regions() {
     print_status "Use 'hop ssh <region>' to connect to a specific region"
     print_status "Use 'hop status' to check deployment status"
     echo
-    print_warning "Remember: This service will incur AWS charges (~$15/month per region)"
     print_warning "To destroy deployments: hop destroy <region>"
 }
 
