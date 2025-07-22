@@ -279,7 +279,7 @@ export class RegionHopComputeStack extends cdk.Stack {
       'printf "# Restart WireGuard to apply changes\\n" >> /etc/wireguard/remove-client.sh',
       'printf "systemctl restart wg-quick@wg0\\n\\n" >> /etc/wireguard/remove-client.sh',
       'printf "# Backup updated configuration to S3\\n" >> /etc/wireguard/remove-client.sh',
-      `printf "aws s3 sync /etc/wireguard s3://${s3BucketName}/wireguard-config/ --exclude \\"*.tmp\\" --exclude \\"*.backup.*\\" --region ${targetRegion}\\n" >> /etc/wireguard/remove-client.sh`,
+      `printf "aws s3 sync /etc/wireguard s3://${s3BucketName}/wireguard-config/ --exclude \\"*.tmp\\" --exclude \\"*.backup.*\\" --region ${targetRegion} --delete\\n" >> /etc/wireguard/remove-client.sh`,
       'printf "\\n" >> /etc/wireguard/remove-client.sh',
       'printf "echo \\"Client \\$CLIENT_NAME removed successfully!\\"\\n" >> /etc/wireguard/remove-client.sh',
       'printf "echo \\"WireGuard service restarted and configuration backed up to S3\\"\\n" >> /etc/wireguard/remove-client.sh',
