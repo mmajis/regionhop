@@ -441,21 +441,9 @@ destroy_region() {
         return 1
     fi
 
-    local region_info=$(get_region_info "$region")
-    local region_name=$(echo "$region_info" | jq -r '.name' 2>/dev/null)
-
-    local infra_stack=$(get_stack_name "Infrastructure" "$region")
-    local compute_stack=$(get_stack_name "Compute" "$region")
-
-    # Check if anything is deployed
-    if ! stack_exists "$infra_stack" "$region" && ! stack_exists "$compute_stack" "$region"; then
-        print_warning "No VPN deployment found in region $region"
-        return 0
-    fi
-
     # Confirmation prompt unless forced
     if [ "$force" != "true" ]; then
-        print_warning "This will destroy the VPN service in region $region ($region_name)"
+        print_warning "This will destroy the VPN service in region $region"
         print_warning "This action cannot be undone!"
         echo
         read -p "Are you sure you want to continue? (y/N) " -n 1 -r
@@ -469,30 +457,11 @@ destroy_region() {
     # Set region environment variable for CDK
     export VPN_REGION="$region"
 
-    # Destroy compute stack first (if exists)
-    if stack_exists "$compute_stack" "$region"; then
-        print_status "Destroying compute stack: $compute_stack"
-        cdk destroy "$compute_stack" --force
+    npx cdk destroy --all --require-approval never --force
 
-        if [ $? -ne 0 ]; then
-            print_error "Failed to destroy compute stack for region $region"
-            return 1
-        fi
-
-        print_success "Compute stack destroyed successfully"
-    fi
-
-    # Destroy infrastructure stack (if exists)
-    if stack_exists "$infra_stack" "$region"; then
-        print_status "Destroying infrastructure stack: $infra_stack"
-        cdk destroy "$infra_stack" --force
-
-        if [ $? -ne 0 ]; then
-            print_error "Failed to destroy infrastructure stack for region $region"
-            return 1
-        fi
-
-        print_success "Infrastructure stack destroyed successfully"
+    if [ $? -ne 0 ]; then
+        print_error "Failed to destroy RegionHop in region $region"
+        return 1
     fi
 
     # Clean up SSH key file
@@ -502,7 +471,7 @@ destroy_region() {
         print_status "Cleaned up SSH key file: $key_file"
     fi
 
-    print_success "VPN service destroyed successfully in region $region"
+    print_success "RegionHop destroyed successfully in region $region"
 }
 
 # Deploy to region
@@ -519,10 +488,7 @@ deploy_to_region() {
         return 1
     fi
 
-    local region_info=$(get_region_info "$region")
-    local region_name=$(echo "$region_info" | jq -r '.name' 2>/dev/null)
-
-    print_status "Deploying VPN service to region: $region ($region_name)"
+    print_status "Deploying RegionHop to region: $region"
 
     # Bootstrap region if needed
     bootstrap_region "$region"
@@ -530,32 +496,15 @@ deploy_to_region() {
         return 1
     fi
 
-    local infra_stack=$(get_stack_name "Infrastructure" "$region")
-    local compute_stack=$(get_stack_name "Compute" "$region")
-
     # Set region environment variable for CDK
     export VPN_REGION="$region"
 
-    # Deploy infrastructure stack first
-    print_status "Deploying infrastructure stack: $infra_stack"
-    cdk deploy "$infra_stack" --require-approval never
+    npx cdk deploy --all --require-approval never
 
     if [ $? -ne 0 ]; then
-        print_error "Failed to deploy infrastructure stack for region $region"
+        print_error "Failed to deploy to region $region"
         return 1
     fi
 
-    print_success "Infrastructure stack deployed successfully"
-
-    # Deploy compute stack
-    print_status "Deploying compute stack: $compute_stack"
-    cdk deploy "$compute_stack" --require-approval never
-
-    if [ $? -ne 0 ]; then
-        print_error "Failed to deploy compute stack for region $region"
-        return 1
-    fi
-
-    print_success "Compute stack deployed successfully"
     print_success "VPN service deployed successfully to region $region"
 }

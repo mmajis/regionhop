@@ -704,18 +704,8 @@ get_asg_name() {
 # Deploy to multiple regions (from deploy.sh)
 deploy_multiple_regions() {
     local regions=("$@")
-    local cost_per_region=15
-    local total_cost=$((${#regions[@]} * $cost_per_region))
 
     print_status "Deploying WireGuard VPN to ${#regions[@]} region(s): ${regions[*]}"
-    print_warning "This will create AWS resources that may incur charges (~$${total_cost}/month total)."
-
-    read -p "Do you want to continue? (y/N) " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        print_warning "Deployment cancelled."
-        exit 0
-    fi
 
     install_dependencies
     build_project
