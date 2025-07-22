@@ -1,0 +1,8 @@
+{
+  "defaultRegion": "eu-central-1",
+  "vpnSubnet": "10.8.0.0/24",
+  "vpnPort": 51820,
+  "domain": "example.com",
+  "dnsRecordTtl": 30,
+  "deploymentId": "replace_with_unique_id"
+}
