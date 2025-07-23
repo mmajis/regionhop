@@ -185,7 +185,32 @@ cmd_regions() {
 }
 
 cmd_status() {
-    local region=$1
+    local region=""
+    local verbose=false
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --verbose|-v)
+                verbose=true
+                shift
+                ;;
+            --help|-h)
+                show_status_help
+                return 0
+                ;;
+            *)
+                if [ -z "$region" ]; then
+                    region="$1"
+                else
+                    print_error "Unknown option or too many arguments: $1"
+                    show_status_help
+                    return 1
+                fi
+                shift
+                ;;
+        esac
+    done
 
     if [ -n "$region" ]; then
         # Show status for specific region
@@ -195,6 +220,41 @@ cmd_status() {
         fi
 
         show_region_comprehensive_status "$region"
+
+        # If verbose mode is enabled and region is healthy, run remote status script
+        if [ "$verbose" = true ]; then
+            local status=$(get_region_comprehensive_status "$region")
+            if [ "$status" = "RUNNING" ]; then
+                echo
+                print_status "Verbose status information from VPN server:"
+                echo "============================================="
+
+                local server_ip=$(get_vpn_server_ip "$region")
+                if [ -z "$server_ip" ] || [ "$server_ip" = "null" ]; then
+                    print_error "Could not retrieve server IP for region $region"
+                    return 1
+                fi
+
+                local key_file=$(get_ssh_key "$region")
+                if [ $? -ne 0 ]; then
+                    return 1
+                fi
+
+                # Execute remote vpn-status.sh script
+                set +e  # Temporarily disable exit on error to capture SSH exit code
+                ssh -i "$key_file" ubuntu@"$server_ip" "sudo /etc/wireguard/vpn-status.sh" 2>/dev/null
+                local ssh_exit_code=$?
+                set -e
+
+                if [ $ssh_exit_code -ne 0 ]; then
+                    print_warning "Could not retrieve verbose status from VPN server"
+                    print_warning "Remote script /etc/wireguard/vpn-status.sh may not be available"
+                fi
+            else
+                print_warning "Verbose status is only available when region status is RUNNING"
+                print_status "Current status: $status"
+            fi
+        fi
     else
         # Show status for all deployed regions (discovered automatically)
         print_status "VPN status across all deployed regions:"
@@ -806,7 +866,7 @@ show_main_help() {
     echo "  list                         Show example regions (supportedRegions removed)"
     echo "  deployed                     Show only deployed regions with status"
     echo "  regions                      Show example regions (supportedRegions removed)"
-    echo "  status [region]              Show VPN status (RUNNING/STOPPED/UNHEALTHY/UNDEPLOYED)"
+    echo "  status [region] [--verbose|-v] Show VPN status (RUNNING/STOPPED/UNHEALTHY/UNDEPLOYED)"
     echo
     echo "Connection & Access:"
     echo "  ssh <region>                 SSH to VPN server in region"
@@ -823,6 +883,7 @@ show_main_help() {
     echo "  hop deployed                 # See deployed regions with status"
     echo "  hop status                   # Check status of all deployed regions"
     echo "  hop status us-east-1         # Check status of specific region"
+    echo "  hop status us-east-1 -v      # Check status with verbose server details"
     echo "  hop ssh eu-central-1         # Connect to EU server"
     echo "  hop destroy us-west-2        # Remove US West deployment"
     echo
@@ -861,6 +922,27 @@ show_download_client_help() {
     echo "  hop download-client us-east-1 -a        # Same as above (short flag)"
     echo
     echo "Note: Use 'hop list-clients <region>' to see available clients."
+}
+
+show_status_help() {
+    echo "Usage: hop status [region] [options]"
+    echo
+    echo "Show VPN status information. If no region is specified, shows status for all deployed regions."
+    echo
+    echo "Arguments:"
+    echo "  [region]        AWS region to check status for (optional)"
+    echo
+    echo "Options:"
+    echo "  --verbose, -v   Show detailed status from VPN server (only available for single region when RUNNING)"
+    echo "  --help, -h      Show this help message"
+    echo
+    echo "Examples:"
+    echo "  hop status                    # Show status for all deployed regions"
+    echo "  hop status us-east-1          # Show status for specific region"
+    echo "  hop status us-east-1 -v       # Show detailed status with server information"
+    echo "  hop status us-east-1 --verbose # Same as above (long flag)"
+    echo
+    echo "Note: Verbose mode executes /etc/wireguard/vpn-status.sh on the remote server."
 }
 
 #==========================================
