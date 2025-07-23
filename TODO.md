@@ -1,1 +1,3 @@
-* Create the server scripts as actual files in the repo instead of crazy printf userdata script stuff. Deployment should copy them to s3 bucket and ec2 instance will sync from there.
+Create the server scripts add-client.sh, remove-client.sh and vpn-status.sh as actual files in the repo instead of crazy printf userdata script stuff. Deployment should copy them to s3 bucket and ec2 instance will sync from there when it starts. The scripts are currently created from the userdata script with printf statements which is error prone to maintain now that the scripts are getting more functionality.
+
+The files should be created in a new server-scripts directory and the deployment should copy them to the s3 bucket if they have changed since last deployment. The ec2 instance should sync them from the s3 bucket at startup.
