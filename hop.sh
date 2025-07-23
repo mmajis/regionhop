@@ -289,77 +289,6 @@ cmd_ssh() {
     ssh -i "$key_file" ubuntu@"$server_ip"
 }
 
-cmd_config() {
-    local region=$1
-
-    if [ -z "$region" ]; then
-        print_error "Region parameter is required"
-        echo "Usage: hop config <region>"
-        return 1
-    fi
-
-    validate_region "$region"
-    if [ $? -ne 0 ]; then
-        return 1
-    fi
-
-    # Check if region is deployed
-    local infra_stack=$(get_stack_name "Infrastructure" "$region")
-    local compute_stack=$(get_stack_name "Compute" "$region")
-
-    if ! stack_exists "$infra_stack" "$region" || ! stack_exists "$compute_stack" "$region"; then
-        print_error "VPN service is not deployed in region $region"
-        return 1
-    fi
-
-    local server_ip=$(get_vpn_server_ip "$region")
-    if [ -z "$server_ip" ] || [ "$server_ip" = "null" ]; then
-        print_error "Could not retrieve server IP for region $region"
-        return 1
-    fi
-
-    local key_file=$(get_ssh_key "$region")
-    if [ $? -ne 0 ]; then
-        return 1
-    fi
-
-    print_warning "The 'config' command is deprecated. Use 'hop download-client <region> <client-name>' instead."
-    print_status "To see available clients, use: hop list-clients $region"
-    echo
-    print_status "For backward compatibility, attempting to download first available client..."
-
-    # Get list of clients and download the first one found
-    local clients=$(ssh -i "$key_file" ubuntu@"$server_ip" \
-        "sudo find /etc/wireguard/clients -maxdepth 1 -type d -not -path '/etc/wireguard/clients' -exec basename {} \;" 2>/dev/null | sort | head -1)
-
-    if [ -z "$clients" ]; then
-        print_error "No clients found in region $region"
-        print_status "Use 'hop add-client $region <client-name>' to create a client first"
-        return 1
-    fi
-
-    local first_client="$clients"
-    mkdir -p client-configs
-    local config_file="client-configs/${first_client}-${region}.conf"
-
-    print_status "Retrieving client configuration for '$first_client' from $region..."
-    ssh -i "$key_file" ubuntu@"$server_ip" \
-        "sudo cat /etc/wireguard/clients/$first_client/$first_client.conf" > "$config_file"
-
-    if [ $? -eq 0 ]; then
-        print_success "Client configuration saved as $config_file"
-        echo
-        print_status "To import to WireGuard app:"
-        echo "1. Open WireGuard app"
-        echo "2. Click 'Import tunnel(s) from file'"
-        echo "3. Select the $config_file file"
-        echo "4. Click 'Import' and then toggle to connect"
-    else
-        print_error "Failed to retrieve client configuration from $region"
-        return 1
-    fi
-}
-
 cmd_list_clients() {
     local region=$1
 
@@ -880,7 +809,6 @@ show_main_help() {
     echo
     echo "Connection & Access:"
     echo "  ssh <region>                 SSH to VPN server in region"
-    echo "  config <region>              Download client configuration (deprecated)"
     echo "  add-client <region> <name>   Add new VPN client to region"
     echo "  remove-client <region> <name> Remove VPN client from region"
     echo "  list-clients <region>        List all VPN clients in region"
@@ -896,7 +824,6 @@ show_main_help() {
     echo "  hop config us-east-1         # Get US East client config"
     echo "  hop destroy us-west-2        # Remove US West deployment"
     echo
-    echo "Note: You can now use any valid AWS region. Region validation is handled by AWS."
     echo "For command-specific help: hop <command> --help"
 }
 
@@ -987,10 +914,6 @@ main() {
         ssh)
             check_prerequisites || exit 1
             cmd_ssh "${@:2}"
-            ;;
-        config)
-            check_prerequisites || exit 1
-            cmd_config "${@:2}"
             ;;
         add-client)
             check_prerequisites || exit 1
