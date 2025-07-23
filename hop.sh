@@ -132,22 +132,37 @@ cmd_deployed() {
     print_status "Deployed VPN regions:"
     echo
 
-    local deployed_regions=$(list_deployed_regions)
+    local deployed_regions=$(list_deployed_regions_by_stacks)
     if [ $? -ne 0 ]; then
         return 1
     fi
 
     for region in $deployed_regions; do
+        local status=$(get_region_comprehensive_status "$region")
         local vpn_ip=$(get_vpn_server_ip "$region")
 
-        if [ -n "$vpn_ip" ] && [ "$vpn_ip" != "null" ]; then
-            print_success "$region ($vpn_ip)"
-        else
-            print_warning "$region (IP not available)"
-        fi
+        case "$status" in
+            "RUNNING")
+                print_success "$region ($vpn_ip) - RUNNING"
+                ;;
+            "STOPPED")
+                print_warning "$region - STOPPED"
+                ;;
+            "UNHEALTHY")
+                if [ -n "$vpn_ip" ] && [ "$vpn_ip" != "null" ]; then
+                    print_error "$region ($vpn_ip) - UNHEALTHY"
+                else
+                    print_error "$region - UNHEALTHY"
+                fi
+                ;;
+            *)
+                print_warning "$region - $status"
+                ;;
+        esac
     done
 
     echo
+    print_status "Use 'hop status' for detailed status information"
     print_status "Use 'hop ssh <region>' to connect to a specific region"
 }
 
@@ -179,72 +194,59 @@ cmd_status() {
             return 1
         fi
 
-        show_region_status "$region"
+        show_region_comprehensive_status "$region"
     else
         # Show status for all deployed regions (discovered automatically)
-        print_status "VPN deployment status across all deployed regions:"
+        print_status "VPN status across all deployed regions:"
         echo
 
-        local deployed_regions=$(list_deployed_regions)
+        local deployed_regions=$(list_deployed_regions_by_stacks)
         if [ $? -ne 0 ]; then
             print_warning "No VPN deployments found in any region"
             return 1
         fi
 
+        local running_count=0
+        local stopped_count=0
+        local unhealthy_count=0
+        local total_count=0
+
         for region in $deployed_regions; do
-            show_region_status "$region"
+            local status=$(get_region_comprehensive_status "$region")
+            local vpn_ip=$(get_vpn_server_ip "$region")
+
+            total_count=$((total_count + 1))
+
+            case "$status" in
+                "RUNNING")
+                    print_success "  $region: RUNNING ($vpn_ip)"
+                    running_count=$((running_count + 1))
+                    ;;
+                "STOPPED")
+                    print_warning "  $region: STOPPED (Auto scaling group capacity is 0)"
+                    stopped_count=$((stopped_count + 1))
+                    ;;
+                "UNHEALTHY")
+                    print_error "  $region: UNHEALTHY (Server not responding on VPN port)"
+                    unhealthy_count=$((unhealthy_count + 1))
+                    ;;
+                "UNDEPLOYED")
+                    # This shouldn't happen as we're listing deployed regions
+                    print_warning "  $region: UNDEPLOYED"
+                    ;;
+                *)
+                    print_error "  $region: UNKNOWN STATUS"
+                    unhealthy_count=$((unhealthy_count + 1))
+                    ;;
+            esac
         done
-    fi
-}
 
-cmd_health() {
-    print_status "Performing health check on all deployed regions..."
-    echo
-
-    local deployed_regions=$(list_deployed_regions)
-    if [ $? -ne 0 ]; then
-        return 1
-    fi
-
-    local healthy_count=0
-    local unhealthy_regions=()
-
-    for region in $deployed_regions; do
-        print_status "Checking $region..."
-
-        # Check if stacks are healthy
-        local infra_stack=$(get_stack_name "Infrastructure" "$region")
-        local compute_stack=$(get_stack_name "Compute" "$region")
-
-        local infra_status=$(get_stack_status "$infra_stack" "$region")
-        local compute_status=$(get_stack_status "$compute_stack" "$region")
-
-        if [ "$infra_status" = "CREATE_COMPLETE" ] || [ "$infra_status" = "UPDATE_COMPLETE" ]; then
-            if [ "$compute_status" = "CREATE_COMPLETE" ] || [ "$compute_status" = "UPDATE_COMPLETE" ]; then
-                local vpn_ip=$(get_vpn_server_ip "$region")
-                if [ -n "$vpn_ip" ] && [ "$vpn_ip" != "null" ]; then
-                    print_success "  $region: HEALTHY ($vpn_ip)"
-                    healthy_count=$((healthy_count + 1))
-                else
-                    print_warning "  $region: UNHEALTHY (No IP available)"
-                    unhealthy_regions+=("$region")
-                fi
-            else
-                print_warning "  $region: UNHEALTHY (Compute stack: $compute_status)"
-                unhealthy_regions+=("$region")
-            fi
-        else
-            print_warning "  $region: UNHEALTHY (Infrastructure stack: $infra_status)"
-            unhealthy_regions+=("$region")
-        fi
-    done
-
-    echo
-    print_status "Health check summary:"
-    print_success "Healthy regions: $healthy_count"
-
-    if [ ${#unhealthy_regions[@]} -gt 0 ]; then
-        print_warning "Unhealthy regions: ${#unhealthy_regions[@]} (${unhealthy_regions[*]})"
+        echo
+        print_status "Status Summary:"
+        print_success "RUNNING: $running_count"
+        print_warning "STOPPED: $stopped_count"
+        print_error "UNHEALTHY: $unhealthy_count"
+        echo "Total deployed regions: $total_count"
     fi
 }
 
@@ -607,7 +609,7 @@ cmd_remove_client() {
         print_success "Client '$client_name' removed successfully from region $region"
         echo
         print_status "The client configuration is no longer valid and should be removed from client devices"
-        
+
         # Clean up local config file if it exists
         local config_file="client-configs/${client_name}-${region}.conf"
         if [ -f "$config_file" ]; then
@@ -802,10 +804,9 @@ show_main_help() {
     echo
     echo "Status & Information:"
     echo "  list                         Show example regions (supportedRegions removed)"
-    echo "  deployed                     Show only deployed regions"
+    echo "  deployed                     Show only deployed regions with status"
     echo "  regions                      Show example regions (supportedRegions removed)"
-    echo "  status [region]              Show deployment status"
-    echo "  health                       Health check all deployed regions"
+    echo "  status [region]              Show VPN status (RUNNING/STOPPED/UNHEALTHY/UNDEPLOYED)"
     echo
     echo "Connection & Access:"
     echo "  ssh <region>                 SSH to VPN server in region"
@@ -819,9 +820,10 @@ show_main_help() {
     echo "  hop deploy us-east-1         # Deploy to specific region"
     echo "  hop start eu-central-1       # Start VPN server in EU Central"
     echo "  hop stop eu-central-1        # Stop VPN server in EU Central"
-    echo "  hop deployed                 # See deployed regions"
+    echo "  hop deployed                 # See deployed regions with status"
+    echo "  hop status                   # Check status of all deployed regions"
+    echo "  hop status us-east-1         # Check status of specific region"
     echo "  hop ssh eu-central-1         # Connect to EU server"
-    echo "  hop config us-east-1         # Get US East client config"
     echo "  hop destroy us-west-2        # Remove US West deployment"
     echo
     echo "For command-specific help: hop <command> --help"
@@ -904,10 +906,6 @@ main() {
         status)
             check_prerequisites || exit 1
             cmd_status "${@:2}"
-            ;;
-        health)
-            check_prerequisites || exit 1
-            cmd_health "${@:2}"
             ;;
 
         # Connection commands

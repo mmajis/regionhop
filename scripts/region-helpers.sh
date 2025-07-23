@@ -290,6 +290,65 @@ show_region_status() {
     echo
 }
 
+# Show comprehensive region status with detailed information
+show_region_comprehensive_status() {
+    local region=$1
+
+    if [ -z "$region" ]; then
+        print_error "Region parameter is required"
+        return 1
+    fi
+
+    validate_region "$region"
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+
+    echo
+    print_status "Comprehensive status for region: $region"
+    echo "============================================="
+
+    local status=$(get_region_comprehensive_status "$region")
+    local vpn_ip=$(get_vpn_server_ip "$region")
+    local desired_capacity=$(get_asg_desired_capacity "$region")
+
+    case "$status" in
+        "RUNNING")
+            print_success "Status: RUNNING"
+            print_success "VPN Server IP: $vpn_ip"
+            print_success "Auto Scaling Group Capacity: $desired_capacity"
+            print_success "VPN Port Response: Server responding on configured VPN port"
+            ;;
+        "STOPPED")
+            print_warning "Status: STOPPED"
+            print_warning "Auto Scaling Group Capacity: $desired_capacity (deployment complete but server not running)"
+            if [ -n "$vpn_ip" ] && [ "$vpn_ip" != "null" ]; then
+                print_status "Last Known VPN Server IP: $vpn_ip"
+            fi
+            ;;
+        "UNHEALTHY")
+            print_error "Status: UNHEALTHY"
+            print_error "Auto Scaling Group Capacity: $desired_capacity"
+            if [ -n "$vpn_ip" ] && [ "$vpn_ip" != "null" ]; then
+                print_warning "VPN Server IP: $vpn_ip"
+                print_error "VPN Port Response: Server not responding on configured VPN port"
+            else
+                print_error "VPN Server IP: Not available"
+            fi
+            ;;
+        "UNDEPLOYED")
+            print_warning "Status: UNDEPLOYED"
+            print_warning "No RegionHop CloudFormation stacks found in this region"
+            ;;
+        *)
+            print_error "Status: UNKNOWN"
+            print_error "Unable to determine region status"
+            ;;
+    esac
+
+    echo
+}
+
 # Check if region is bootstrapped for CDK
 is_region_bootstrapped() {
     local region=$1
@@ -484,4 +543,171 @@ deploy_to_region() {
     fi
 
     print_success "VPN service deployed successfully to region $region"
+}
+
+# Check if VPN server responds on configured port
+check_vpn_connectivity() {
+    local region=$1
+    local server_ip=$2
+    local vpn_port
+
+    if [ -z "$region" ] || [ -z "$server_ip" ]; then
+        print_error "Both region and server_ip parameters are required"
+        return 1
+    fi
+
+    # Get VPN port from config.json
+    if [ -f "config.json" ]; then
+        vpn_port=$(cat config.json | jq -r '.vpnPort' 2>/dev/null)
+        if [ -z "$vpn_port" ] || [ "$vpn_port" = "null" ]; then
+            vpn_port=51820  # Default WireGuard port
+        fi
+    else
+        vpn_port=51820  # Default WireGuard port
+    fi
+
+    # Test UDP connectivity to VPN port using netcat or timeout
+    if command -v nc >/dev/null 2>&1; then
+        # Use netcat with timeout for UDP port check
+        timeout 3 nc -u -z "$server_ip" "$vpn_port" >/dev/null 2>&1
+        return $?
+    else
+        # Fallback: try to connect using /dev/udp (bash built-in)
+        timeout 3 bash -c "echo > /dev/udp/$server_ip/$vpn_port" >/dev/null 2>&1
+        return $?
+    fi
+}
+
+# Get Auto Scaling Group desired capacity
+get_asg_desired_capacity() {
+    local region=$1
+
+    if [ -z "$region" ]; then
+        print_error "Region parameter is required"
+        return 1
+    fi
+
+    validate_region "$region"
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+
+    # Get ASG name from compute stack outputs
+    local compute_stack=$(get_stack_name "Compute" "$region")
+    if ! stack_exists "$compute_stack" "$region"; then
+        echo "0"  # No compute stack means capacity is effectively 0
+        return 0
+    fi
+
+    local outputs=$(get_stack_outputs "$compute_stack" "$region")
+    if [ -z "$outputs" ] || [ "$outputs" = "null" ]; then
+        echo "0"
+        return 0
+    fi
+
+    local asg_name=$(echo "$outputs" | jq -r '.[] | select(.OutputKey=="VPNServerAutoScalingGroup") | .OutputValue' 2>/dev/null)
+    if [ -z "$asg_name" ] || [ "$asg_name" = "null" ]; then
+        echo "0"
+        return 0
+    fi
+
+    # Get desired capacity from ASG
+    local desired_capacity=$(aws autoscaling describe-auto-scaling-groups \
+        --auto-scaling-group-names "$asg_name" \
+        --region "$region" \
+        --query 'AutoScalingGroups[0].DesiredCapacity' \
+        --output text 2>/dev/null)
+
+    if [ -z "$desired_capacity" ] || [ "$desired_capacity" = "None" ] || [ "$desired_capacity" = "null" ]; then
+        echo "0"
+    else
+        echo "$desired_capacity"
+    fi
+}
+
+# List deployed regions by checking for any CloudFormation stack starting with RegionHop
+list_deployed_regions_by_stacks() {
+    local deployed_regions=()
+
+    # Get all regions where we might have deployments
+    local all_regions=$(aws ec2 describe-regions --query 'Regions[].RegionName' --output text 2>/dev/null | tr '\t' '\n')
+
+    if [ $? -ne 0 ] || [ -z "$all_regions" ]; then
+        print_error "Failed to get AWS regions list"
+        return 1
+    fi
+
+    for region in $all_regions; do
+        # Skip empty lines
+        if [ -z "$region" ]; then
+            continue
+        fi
+
+        # Check if any stack starting with "RegionHop" exists in this region
+        local regionhop_stacks=$(aws cloudformation list-stacks \
+            --region "$region" \
+            --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE CREATE_IN_PROGRESS UPDATE_IN_PROGRESS \
+            --query 'StackSummaries[?starts_with(StackName, `RegionHop`)].StackName' \
+            --output text 2>/dev/null)
+
+        if [ -n "$regionhop_stacks" ] && [ "$regionhop_stacks" != "None" ]; then
+            deployed_regions+=("$region")
+        fi
+    done
+
+    if [ ${#deployed_regions[@]} -eq 0 ]; then
+        print_warning "No deployed regions found"
+        return 1
+    fi
+
+    printf '%s\n' "${deployed_regions[@]}"
+}
+
+# Get comprehensive region status
+get_region_comprehensive_status() {
+    local region=$1
+
+    if [ -z "$region" ]; then
+        print_error "Region parameter is required"
+        return 1
+    fi
+
+    validate_region "$region"
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+
+    # Check if any RegionHop stacks exist
+    local regionhop_stacks=$(aws cloudformation list-stacks \
+        --region "$region" \
+        --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE CREATE_IN_PROGRESS UPDATE_IN_PROGRESS \
+        --query 'StackSummaries[?starts_with(StackName, `RegionHop`)].StackName' \
+        --output text 2>/dev/null)
+
+    if [ -z "$regionhop_stacks" ] || [ "$regionhop_stacks" = "None" ]; then
+        echo "UNDEPLOYED"
+        return 0
+    fi
+
+    # Get ASG desired capacity
+    local desired_capacity=$(get_asg_desired_capacity "$region")
+
+    if [ "$desired_capacity" = "0" ]; then
+        echo "STOPPED"
+        return 0
+    fi
+
+    # Check if we can get the VPN server IP
+    local vpn_ip=$(get_vpn_server_ip "$region")
+    if [ -z "$vpn_ip" ] || [ "$vpn_ip" = "null" ]; then
+        echo "UNHEALTHY"
+        return 0
+    fi
+
+    # Test VPN connectivity
+    if check_vpn_connectivity "$region" "$vpn_ip"; then
+        echo "RUNNING"
+    else
+        echo "UNHEALTHY"
+    fi
 }
