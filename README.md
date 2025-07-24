@@ -1,60 +1,74 @@
-# WireGuard VPN Service on AWS
+# RegionHop VPN
 
-A complete AWS CDK implementation of a personal WireGuard VPN service with multi-region support for privacy, security, and geo-unblocking.
+A simple WireGuard VPN setup with multi-region support. Deploys to any AWS region with CDK.
 
-## 🎯 Quick Start with Hop
+## 🎯 Quick Start with `hop.sh`
 
-This project now includes **`hop`** - a unified command-line tool that consolidates all VPN management functions into a single, intuitive interface:
+Copy `config-template.json` to `config.json` and edit it to your liking.
+
+You can choose to leave the domain blank to use direct IP address based connectivity. If you do provide a domain, RegionHop will create A records under the `regionhop` subdomain there for each region you deploy. A deployment in `eu-central-1` will create a record `eu-central-1.regionhop.example.com`.
+
+Use the **`hop.sh`** script to manage your RegionHop VPN:
 
 ```bash
 ./hop.sh deploy                    # Deploy VPN to default region
-./hop.sh list                      # See all regions and their status
-./hop.sh ssh eu-central-1          # Connect to your VPN server
-./hop.sh config eu-central-1       # Get client configuration
-./hop.sh destroy us-west-2         # Remove unused regions
 ```
 
-**Why Hop?** Previously, this project had 3 separate scripts (`deploy.sh`, `connect.sh`, `region-manager.sh`) which created confusion. Hop unifies all functionality into one tool while maintaining backward compatibility.
+After deployment, add a client: 
+```bash
+./hop.sh add-client <your region> <client-name>
+```
+
+The command will output a QR code with which you can add the client to the WireGuard app on your phone. To use the client configuration on a computer, download it: 
+
+```bash
+./hop.sh download-client <your region> <client-name>
+```
+
+Import the downloaded configuration to your WireGuard app.
+
+## 📋 Prerequisites
+
+- Active AWS account with permissions to create VPC, EC2, and IAM resources
+- AWS CLI configured with appropriate credentials
+- Node.js (v22 or later)
 
 ## 🚀 Features
 
 - **Modern VPN Protocol**: WireGuard for high performance and security
-- **Multi-Region Support**: Deploy to 5 AWS regions for global coverage
-- **Privacy-Focused**: Default deployment in EU Frankfurt (eu-central-1)
-- **Easy macOS Integration**: Official WireGuard app support
-- **Automated Setup**: One-command deployment with CDK
-- **Enhanced Security**: fail2ban protection and UFW firewall
-- **Cost-Effective**: ~$15/month per region on t3.micro instance
+- **Multi-Region Support**: Deploy to any AWS region
+- **Automated Setup**: One-command deployment with `hop.sh` management script
 - **Client Management**: Easy client configuration generation
 - **Region Management**: Deploy, manage, and destroy regions independently
 
-## 📋 Prerequisites
-
-- AWS CLI configured with appropriate credentials
-- Node.js (v18 or later)
-- AWS CDK CLI installed globally
-- Active AWS account with permissions to create VPC, EC2, and IAM resources
-
 ## 🏗️ Architecture
 
-```
-Internet
-    ↓
-Elastic IP (Static)
-    ↓
-VPC (Custom)
-    ↓
-Public Subnet
-    ↓
-EC2 Instance (Ubuntu 24.04)
-    ↓
-WireGuard Server
-    ↓
-Security Group (SSH + WireGuard)
-    ↓
-fail2ban + UFW Firewall
-    ↓
-S3 Bucket (Encrypted State Backup)
+```mermaid
+flowchart TD
+    subgraph "CDK Stack Architecture"
+        direction TB
+        subgraph PersistenceStack[📦 Persistence Stack]
+            S3Bucket[🗂️ Encrypted S3 Bucket<br/>WireGuard State Backup]
+        end
+        
+        subgraph InfrastructureStack[🏗️ Infrastructure Stack]
+            VPCRes[☁️ VPC & Subnets]
+            SecurityGroups[🛡️ Security Groups]
+            IAMRoles[👤 IAM Roles]
+            SSHKeys[🔑 SSH Key Pairs]
+        end
+        
+        subgraph ComputeStack[⚡ Compute Stack]
+            EC2Instances[💻 EC2 Instance]
+            ASG[📈 Auto Scaling Group]
+            Lambda[⚡ Lambda Functions<br/>DNS Updater]
+        end
+        
+        InfrastructureStack --> PersistenceStack 
+        ComputeStack --> InfrastructureStack
+        ComputeStack --> PersistenceStack
+    end
+    
 ```
 
 ### Three-Stack Architecture
@@ -67,17 +81,9 @@ The deployment consists of three CDK stacks per region:
 
 ## 🛠️ Deployment
 
-### 1. Clone and Setup
+### Deploy with Hop
 
-```bash
-git clone <your-repo>
-cd regionhop
-npm install
-```
-
-### 2. Deploy with Hop - The Unified VPN Tool
-
-The service uses **`hop`** - a unified command-line tool that consolidates all VPN management functions:
+Use the **`hop`** script to manage your RegionHop deployments:
 
 ```bash
 # Deploy to default region (eu-central-1)
@@ -96,7 +102,7 @@ The service uses **`hop`** - a unified command-line tool that consolidates all V
 ./hop.sh status
 ```
 
-For manual deployment:
+### Alternative: Deploy with AWS CDK
 
 ```bash
 # Bootstrap CDK for target region (first-time only)
@@ -108,10 +114,8 @@ export REGIONHOP_REGION=eu-central-1
 # Optional: Set deployment ID for unique resource naming (prevents conflicts)
 export REGIONHOP_DEPLOYMENT_ID=mydeployment
 
-# Deploy the stacks (in order)
-cdk deploy RegionHop-eu-central-1-Persistence
-cdk deploy RegionHop-eu-central-1-Infrastructure
-cdk deploy RegionHop-eu-central-1-Compute
+# Deploy the stacks
+npx cdk deploy --all
 ```
 
 ### Configuration Options
@@ -120,7 +124,7 @@ cdk deploy RegionHop-eu-central-1-Compute
 The system includes a configurable `deploymentId` to ensure unique S3 bucket names and prevent conflicts when multiple instances of this app are deployed in the same regions:
 
 **Configuration Methods:**
-1. **Environment Variable** (recommended): `export REGIONHOP_DEPLOYMENT_ID=myuniqueid`
+1. **Environment Variable**: `export REGIONHOP_DEPLOYMENT_ID=myuniqueid`
 2. **Config File**: Edit `deploymentId` in `config.json` (default: `"default"`)
 
 **Why This Matters:**
@@ -130,61 +134,17 @@ The system includes a configurable `deploymentId` to ensure unique S3 bucket nam
 
 **Example Usage:**
 ```bash
-# Production deployment
-export REGIONHOP_DEPLOYMENT_ID=prod
-./hop.sh deploy us-east-1
-
-# Development deployment
-export REGIONHOP_DEPLOYMENT_ID=dev
-./hop.sh deploy us-east-1
-
-# Personal deployment
-export REGIONHOP_DEPLOYMENT_ID=personal
+export REGIONHOP_DEPLOYMENT_ID=myuniqueid
 ./hop.sh deploy us-east-1
 ```
 
-The deployment will:
-- Create an encrypted S3 bucket for state backup per region
-- Create a VPC with public subnet in each region
-- Launch Ubuntu 24.04 LTS EC2 instance with S3 access permissions
-- Configure WireGuard server automatically
-- Set up fail2ban and firewall rules
-- Generate server and client keys
-- Create a default macOS client configuration
-- **Automatically retrieve the SSH private key**
-
-### 3. Region Management
-
-Use hop for all region management operations:
-
-```bash
-# List all regions with deployment status
-./hop.sh list
-
-# Deploy to specific region
-./hop.sh deploy us-west-2
-
-# Destroy region deployment
-./hop.sh destroy us-west-2
-
-# Check health of all deployed regions
-./hop.sh health
-```
-
-## 📱 Client Setup (macOS)
+## 📱 Client Setup
 
 ### 1. Download WireGuard App
 
-Download the official WireGuard app from the Mac App Store.
+Download the official WireGuard app and use the client configuration files to import the configuration.
 
-### 2. List Available Regions
-
-First, see which regions are deployed:
-```bash
-./hop.sh deployed
-```
-
-### 3. Manage VPN Clients
+### 2. Manage VPN Clients
 
 First, add a VPN client to a region:
 ```bash
@@ -213,7 +173,7 @@ Remove a client when no longer needed:
 # • Clean up local config files
 ```
 
-### 4. Download Client Configurations
+### 3. Download Client Configurations
 
 Download specific client configuration:
 ```bash
@@ -226,23 +186,11 @@ Download specific client configuration:
 
 This will create configuration files like `iphone-us-east-1.conf` that you can directly import into the WireGuard app.
 
-### 5. Legacy Configuration Command (Deprecated)
-
-For backward compatibility, the old `config` command still works but is deprecated:
-```bash
-./hop.sh config eu-central-1  # Downloads first available client
-```
-
-### 6. Manual Configuration (Advanced)
+### 4. Manual Configuration (Advanced)
 
 SSH into your server in a specific region:
 ```bash
 ./hop.sh ssh eu-central-1
-```
-
-List all clients on the server:
-```bash
-sudo find /etc/wireguard/clients -maxdepth 1 -type d -not -path '/etc/wireguard/clients' -exec basename {} \;
 ```
 
 Retrieve a specific client configuration:
@@ -250,7 +198,7 @@ Retrieve a specific client configuration:
 sudo cat /etc/wireguard/clients/CLIENT_NAME/CLIENT_NAME.conf
 ```
 
-### 7. Import Configuration
+### 5. Import Configuration
 
 1. Open WireGuard app
 2. Click "Import tunnel(s) from file"
@@ -258,13 +206,12 @@ sudo cat /etc/wireguard/clients/CLIENT_NAME/CLIENT_NAME.conf
 4. Import the file
 5. Repeat for each region you want to use
 
-### 8. Connect
+### 6. Connect
 
 Click the toggle switch in WireGuard app to connect to your chosen region.
 
 ## 🔧 Management Commands
 
-### Hop - Unified VPN Management Tool
 Use the **hop** tool for all VPN management tasks:
 
 ```bash
@@ -290,22 +237,6 @@ Use the **hop** tool for all VPN management tasks:
 ./hop.sh list-clients us-east-1    # List all VPN clients in region
 ./hop.sh download-client us-east-1 iphone  # Download specific client config
 ./hop.sh download-client us-east-1 --all   # Download all client configs
-```
-
-### Quick Reference
-```bash
-# Most common commands
-./hop.sh deploy                    # Deploy VPN
-./hop.sh deployed                  # See deployed regions
-./hop.sh ssh eu-central-1          # Connect to server
-./hop.sh config eu-central-1       # Get client config
-./hop.sh destroy us-west-2         # Remove unused region
-```
-
-### Manual SSH Access
-```bash
-# SSH key files are created per region
-ssh -i regionhop-vpn-key-<region>.pem ubuntu@YOUR_SERVER_IP
 ```
 
 ### Server Management Commands
@@ -347,125 +278,33 @@ sudo fail2ban-client status sshd
 ### Key Management
 - Server keys generated automatically
 - Client keys unique per client
-- Private keys stored securely with 600 permissions
 
-## 🛡️ Network Configuration
+## 💸 Runtime cost
 
-### Server Network (Per Region)
-- **VPN Subnet**: 10.8.0.0/24 (configured in config.json)
-- **Server IP**: 10.8.0.1
-- **Client Range**: 10.8.0.2-10.8.0.254
-- **VPN Port**: 51820 (configurable per region)
-
-### DNS Configuration
-- Primary: 1.1.1.1 (Cloudflare)
-- Secondary: 8.8.8.8 (Google)
-
-### Traffic Routing
-- All client traffic routed through VPN
-- IP forwarding enabled
-- NAT configured for internet access
-- Each region operates independently
-
-### Region Selection
-Choose regions based on your needs:
-- **eu-central-1**: European privacy, GDPR compliance
-- **us-east-1**: US East Coast, low latency to East Coast
-- **us-west-2**: US West Coast, low latency to West Coast
-- **ap-southeast-1**: Asia Pacific, Singapore access
-- **ap-northeast-1**: Asia Pacific, Japan access
-
-## 📊 Monitoring
-
-### CloudWatch Integration
-- Basic EC2 monitoring enabled
-- CloudWatch agent permissions configured
-- System logs available in CloudWatch
-
-### Server Monitoring
-```bash
-# Check system resources
-htop
-
-# Monitor network connections
-sudo netstat -tulpn
-
-# Check disk usage
-df -h
-
-# Monitor WireGuard interface
-sudo wg show
-```
-
-## 💰 Cost Optimization
-
-### Current Configuration (Per Region)
-- **Instance Type**: t3.micro (Free tier eligible)
-- **Storage**: 8GB gp3 EBS volume
-- **Network**: Elastic IP included
-- **Estimated Monthly Cost**: ~$15 USD per region
-
-### Multi-Region Cost Considerations
-- **Single Region**: ~$15/month
-- **Two Regions**: ~$30/month
-- **Global Coverage (5 regions)**: ~$75/month
-- **Data Transfer**: Inter-region transfer charges apply
-
-### Cost Reduction Tips
-1. Use AWS Free Tier if eligible (first region only)
-2. Deploy only needed regions - destroy unused ones
-3. Use `./hop.sh destroy <region>` to remove costly regions
-4. Monitor data transfer costs between regions
-5. Consider t3.nano for lower traffic regions
-6. Use CloudWatch alarms for usage alerts per region
-7. Regularly review deployed regions with `./hop.sh status`
+The VPN should be rather cheap with t4g.nano spot EC2 instances. Something like ~$1 per month. Data transfer costs depend on usage.
 
 ## 🔧 Troubleshooting
 
-### Common Issues
-
-#### 1. VPN Connection Fails
+Check status and try to restart:
 ```bash
-# Check WireGuard status
-sudo systemctl status wg-quick@wg0
+# Check status
+./hop.sh status <your region>
+# Restart the EC2 instance
+./hop.sh stop <your region>
+./hop.sh start <your region> # Might need to wait a few seconds after stopping before running start
 
-# Restart WireGuard
-sudo systemctl restart wg-quick@wg0
-
-# Check firewall
-sudo ufw status
-```
-
-#### 2. No Internet Access Through VPN
-```bash
-# Check IP forwarding
-cat /proc/sys/net/ipv4/ip_forward
-
-# Check iptables rules
-sudo iptables -L -n -v
-sudo iptables -t nat -L -n -v
-```
-
-#### 3. Client Can't Connect
-```bash
-# Check server logs
-sudo journalctl -u wg-quick@wg0 -f
-
-# Verify client configuration
-sudo cat /etc/wireguard/clients/CLIENT_NAME/CLIENT_NAME.conf
-```
-
-### Log Locations
+Log locations on the EC2 instance. Use `./hop.sh ssh <your region>` to get to the instance.
 - **WireGuard**: `sudo journalctl -u wg-quick@wg0`
 - **fail2ban**: `sudo tail -f /var/log/fail2ban.log`
 - **UFW**: `sudo tail -f /var/log/ufw.log`
 - **System**: `sudo tail -f /var/log/syslog`
+- **Cloud Init**: `sudo tail -f /var/log/cloud-init-output.log`
 
 ## 🔄 Backup and Recovery
 
 ### S3 State Backup (Automated)
 
-Each region includes an encrypted S3 bucket for secure state backup. The EC2 instances have permissions to sync WireGuard configurations:
+Each region includes an S3 bucket for secure state backup. The EC2 instances have permissions to sync WireGuard configurations:
 
 ```bash
 # Backup WireGuard configuration to S3 (automated via cron)
@@ -474,13 +313,6 @@ aws s3 sync /etc/wireguard s3://regionhop-state-backup-REGION/wireguard-config/ 
 # Restore WireGuard configuration from S3
 aws s3 sync s3://regionhop-state-backup-REGION/wireguard-config/ /etc/wireguard --delete --region REGION
 ```
-
-**Security Features of S3 Backup:**
-- **KMS Encryption**: All data encrypted with region-specific KMS keys
-- **Versioning**: Previous configurations maintained for 30 days
-- **Access Control**: Only EC2 instances with specific IAM roles can access
-- **Block Public Access**: All public access blocked by default
-- **Lifecycle Management**: Automatic transition to cheaper storage classes
 
 ### Manual Backup (Local)
 ```bash
@@ -510,43 +342,15 @@ sudo systemctl restart fail2ban
 sudo ufw reload
 ```
 
-## 🚨 Emergency Procedures
-
-### Server Unresponsive
-1. Check AWS Console for instance status
-2. Reboot instance from AWS Console
-3. Check security group rules
-4. Verify Elastic IP association
-
-### Lost SSH Access
-1. Create new EC2 instance with same security group
-2. Attach original EBS volume as secondary
-3. Copy WireGuard configuration
-4. Update DNS or recreate with new IP
-
-### Compromised Server
-1. Immediately stop EC2 instance
-2. Create new instance from fresh AMI
-3. Restore WireGuard configuration from backup
-4. Generate new server keys
-5. Update all client configurations
-
 ## 📚 Additional Resources
 
 - [WireGuard Documentation](https://www.wireguard.com/)
 - [AWS CDK Documentation](https://docs.aws.amazon.com/cdk/)
-- [Ubuntu fail2ban Guide](https://help.ubuntu.com/community/Fail2ban)
-- [AWS VPC Documentation](https://docs.aws.amazon.com/vpc/)
 
 ## 🤝 Contributing
 
-Feel free to submit issues and pull requests to improve this WireGuard VPN implementation.
+Feel free to submit issues and pull requests to improve RegionHop.
 
 ## 📄 License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
-
----
-**🚀 NEW: Unified Management with Hop**
-This project now includes `hop.sh` - a single, powerful command-line tool that replaces the previous 3-script setup (`deploy.sh`, `connect.sh`, `region-manager.sh`). All old scripts still work via symlinks for backward compatibility, but we recommend using `hop` for the best experience.
----
