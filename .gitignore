@@ -8,7 +8,7 @@ node_modules
 cdk.out
 cdk.out.2
 
-regionhop-vpn-key.pem
-macos-client.conf
-client-configs
+# WireGuard configuration files
+client-configs/
 *.pem
+*.key
