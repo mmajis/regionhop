@@ -1,12 +1,8 @@
-<div style="display: flex; align-items: center; margin-bottom: 20px;">
-  <div style="flex: 1;">
-    <h1>RegionHop VPN</h1>
-    <p>A simple WireGuard VPN setup with multi-region support. Deploys to any AWS region with CDK.</p>
-  </div>
-  <div style="flex: 0 0 auto; margin-left: 20px;">
-    <img src="images/logo_readme.png" alt="RegionHop VPN Logo" style="max-width: 200px; height: auto;" />
-  </div>
-</div>
+<img align="right" src="images/logo_readme.png" alt="RegionHop VPN Logo" width="200" style="margin-left: 20px; margin-bottom: 20px;" />
+
+# RegionHop VPN
+
+A simple WireGuard VPN setup with multi-region support. Deploys to any AWS region with CDK.
 
 ## 🎯 Quick Start with `hop.sh`
 
