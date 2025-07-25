@@ -1,8 +1,10 @@
-<img align="right" src="images/logo_readme.png" alt="RegionHop VPN Logo" width="200" style="margin-left: 20px; margin-bottom: 20px;" />
-
 # RegionHop VPN
 
-A simple WireGuard VPN setup with multi-region support. Deploys to any AWS region with CDK.
+<img align="right" src="images/logo_readme.png" alt="RegionHop VPN Logo" width="200" style="margin-left: 20px; margin-bottom: 20px;" />
+
+Don't trust a random VPN provider? Run your own VPN on AWS with RegionHop!
+
+RegionHop is a simple WireGuard VPN setup with multi-region support. Deploys to any AWS region with CDK. Uses the lowest cost spot instances for cost efficiency. Configuration is backed up to S3 for persistence across spot instance cycles.
 
 ## 🎯 Quick Start with `hop.sh`
 
