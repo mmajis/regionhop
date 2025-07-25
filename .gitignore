@@ -12,3 +12,6 @@ cdk.out.2
 client-configs/
 *.pem
 *.key
+
+# RegionHop specific files
+config.json
