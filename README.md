@@ -69,8 +69,7 @@ flowchart TD
         InfrastructureStack --> PersistenceStack 
         ComputeStack --> InfrastructureStack
         ComputeStack --> PersistenceStack
-    end
-    
+    end 
 ```
 
 ### Three-Stack Architecture
@@ -356,3 +355,6 @@ Feel free to submit issues and pull requests to improve RegionHop.
 ## 📄 License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Acknowledgements
+Vibe coded using tools provided by [Nitor](https://www.nitor.com).
