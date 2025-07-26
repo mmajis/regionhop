@@ -20,7 +20,7 @@ export class RegionHopInfrastructureStack extends cdk.Stack {
     // Get the target region from the stack's environment
     const targetRegion = this.region;
 
-    // Create VPC with public subnet for VPN server (IPv6 enabled, IPv4 public IPs disabled)
+    // Create VPC with public subnet for VPN server
     this.vpc = new ec2.Vpc(this, 'VPC', {
       maxAzs: 1, // Single AZ for cost optimization
       natGateways: 0, // No NAT gateway needed for public subnet
@@ -31,7 +31,6 @@ export class RegionHopInfrastructureStack extends cdk.Stack {
           cidrMask: 24,
           name: 'Public',
           subnetType: ec2.SubnetType.PUBLIC,
-          // Note: mapPublicIpOnLaunch will be disabled at subnet level below
         },
       ],
     });
@@ -75,6 +74,7 @@ export class RegionHopInfrastructureStack extends cdk.Stack {
       vpc: this.vpc,
       description: `Security group for RegionHop VPN server - ${targetRegion}`,
       allowAllOutbound: true,
+      allowAllIpv6Outbound: true,
       securityGroupName: getResourceName('RegionHop', targetRegion) + '-SG',
     });
 
