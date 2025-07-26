@@ -351,11 +351,6 @@ def handler(event, context):
     }
 
     // Output important information
-    new cdk.CfnOutput(this, 'VPNServerIP', {
-      value: 'Dynamic IP - Check DNS record or ASG instances',
-      description: `WireGuard VPN Server Public IP - ${targetRegion} (Dynamic)`,
-    });
-
     if (isDnsManagementEnabled()) {
       const vpnDomain = getVpnSubdomain(targetRegion);
 
@@ -373,41 +368,6 @@ def handler(event, context):
     new cdk.CfnOutput(this, 'VPNServerAutoScalingGroup', {
       value: autoScalingGroup.autoScalingGroupName,
       description: `VPN Server Auto Scaling Group Name - ${targetRegion}`,
-    });
-
-    new cdk.CfnOutput(this, 'SSHCommand', {
-      value: `ssh -i ${infrastructureStack.keyPair.keyPairName}.pem ubuntu@<DYNAMIC_IP>`,
-      description: 'SSH command to connect to VPN server (replace <DYNAMIC_IP> with current instance IP or use domain name)',
-    });
-
-    new cdk.CfnOutput(this, 'SpotInstanceNote', {
-      value: 'This VPN server runs on spot instances for cost savings. The instance may be terminated and replaced by AWS.',
-      description: 'Important note about spot instances',
-    });
-
-    new cdk.CfnOutput(this, 'AutomatedRecovery', {
-      value: 'DNS updates are automated via Lambda when spot instances are replaced using dynamic public IPs.',
-      description: 'Automated recovery capabilities',
-    });
-
-    new cdk.CfnOutput(this, 'ClientConfigLocation', {
-      value: '/etc/wireguard/clients/<CLIENT_NAME>/<CLIENT_NAME>.conf',
-      description: 'Location of client configuration files on server (replace <CLIENT_NAME> with actual client name)',
-    });
-
-    new cdk.CfnOutput(this, 'VPNStatusCommand', {
-      value: 'sudo /etc/wireguard/vpn-status.sh',
-      description: 'Command to check VPN server status',
-    });
-
-    new cdk.CfnOutput(this, 'VPNSubnet', {
-      value: vpnSubnet,
-      description: `VPN internal subnet - ${targetRegion}`,
-    });
-
-    new cdk.CfnOutput(this, 'VPNPort', {
-      value: vpnPort.toString(),
-      description: `VPN server port - ${targetRegion}`,
     });
   }
 }
