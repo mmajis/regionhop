@@ -207,6 +207,8 @@ export class RegionHopComputeStack extends cdk.Stack {
       'chmod +x /etc/wireguard/env.sh',
       '',
       'echo "Server scripts deployed and configured successfully!"',
+      'echo "Backup WireGuard configuration to S3..."',
+      `aws s3 sync /etc/wireguard s3://${s3BucketName}/wireguard-config/ --region "${targetRegion}"`,
       'echo "RegionHop VPN server setup completed!"',
     );
 
