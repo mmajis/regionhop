@@ -383,7 +383,7 @@ bootstrap_region() {
     fi
 
     print_status "Bootstrapping CDK for region $region..."
-    cdk bootstrap --region "$region"
+    REGIONHOP_REGION="$region" npx cdk bootstrap 
 
     if [ $? -eq 0 ]; then
         print_success "Region $region bootstrapped successfully"
