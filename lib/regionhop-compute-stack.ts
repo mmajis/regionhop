@@ -65,6 +65,7 @@ export class RegionHopComputeStack extends cdk.Stack {
       '# Install required packages',
       'apt-get install -y wireguard-tools fail2ban ufw curl qrencode iproute2',
       'snap install aws-cli --classic',
+      'aws configure set use_dualstack_endpoint true',
       '',
       '# Check for existing WireGuard configuration in S3 bucket',
       `S3_BUCKET="${s3BucketName}"`,
