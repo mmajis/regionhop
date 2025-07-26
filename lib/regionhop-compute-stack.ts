@@ -43,7 +43,7 @@ export class RegionHopComputeStack extends cdk.Stack {
 
     // Deploy server scripts to S3 bucket
     const s3Bucket = s3.Bucket.fromBucketName(this, 'StateBackupBucket', s3BucketName);
-    
+
     const scriptDeployment = new s3deploy.BucketDeployment(this, 'ServerScriptsDeployment', {
       sources: [s3deploy.Source.asset('./server-scripts')],
       destinationBucket: s3Bucket,
@@ -63,7 +63,7 @@ export class RegionHopComputeStack extends cdk.Stack {
       'apt-get upgrade -y',
       '',
       '# Install required packages',
-      'apt-get install -y wireguard-tools fail2ban ufw curl qrencode',
+      'apt-get install -y wireguard-tools fail2ban ufw curl qrencode iproute2',
       'snap install aws-cli --classic',
       '',
       '# Check for existing WireGuard configuration in S3 bucket',
@@ -123,9 +123,16 @@ export class RegionHopComputeStack extends cdk.Stack {
       '    wg genkey | tee server_private_key | wg pubkey > server_public_key',
       '    chmod 600 server_private_key',
       '    ',
-      '    # Get server public IP using IMDSv2',
+      '    # Get server addresses using IMDSv2',
       '    TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" -s)',
-      '    SERVER_IP=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" -s http://169.254.169.254/latest/meta-data/public-ipv4)',
+      '    # Try to get IPv6 address (primary for external endpoint)',
+      '    SERVER_IPV6=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" -s http://169.254.169.254/latest/meta-data/ipv6 2>/dev/null || echo "")',
+      '    # Get private IPv4 for internal operations',
+      '    SERVER_PRIVATE_IP=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" -s http://169.254.169.254/latest/meta-data/local-ipv4)',
+      '    ',
+      '    # Log the addresses for debugging',
+      '    echo "Server IPv6: $SERVER_IPV6" >> /var/log/wireguard-setup.log',
+      '    echo "Server Private IPv4: $SERVER_PRIVATE_IP" >> /var/log/wireguard-setup.log',
       '    ',
       '    # Create WireGuard server configuration',
       '    printf "[Interface]\\n" > /etc/wireguard/wg0.conf',
@@ -180,8 +187,15 @@ export class RegionHopComputeStack extends cdk.Stack {
         // Use DNS name when DNS management is enabled
         `export SERVER_ENDPOINT="${getVpnSubdomain(targetRegion)}"`,
       ] : [
-        // Get current public IP when DNS management is disabled
-        'export SERVER_ENDPOINT=$(curl -H "X-aws-ec2-metadata-token: $(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" -s)" -s http://169.254.169.254/latest/meta-data/public-ipv4)',
+        // Use IPv6 if available, fallback to private IPv4
+        'TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" -s)',
+        'SERVER_IPV6=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" -s http://169.254.169.254/latest/meta-data/ipv6 2>/dev/null || echo "")',
+        'if [ -n "$SERVER_IPV6" ]; then',
+        '    export SERVER_ENDPOINT="[$SERVER_IPV6]"  # IPv6 needs brackets',
+        'else',
+        '    SERVER_PRIVATE_IP=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" -s http://169.254.169.254/latest/meta-data/local-ipv4)',
+        '    export SERVER_ENDPOINT="$SERVER_PRIVATE_IP"',
+        'fi',
       ]),
       'EOF',
       '',

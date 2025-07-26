@@ -20,17 +20,55 @@ export class RegionHopInfrastructureStack extends cdk.Stack {
     // Get the target region from the stack's environment
     const targetRegion = this.region;
 
-    // Create VPC with public subnet for VPN server
+    // Create VPC with public subnet for VPN server (IPv6 enabled, IPv4 public IPs disabled)
     this.vpc = new ec2.Vpc(this, 'VPC', {
       maxAzs: 1, // Single AZ for cost optimization
       natGateways: 0, // No NAT gateway needed for public subnet
+      enableDnsHostnames: true,
+      enableDnsSupport: true,
       subnetConfiguration: [
         {
           cidrMask: 24,
           name: 'Public',
           subnetType: ec2.SubnetType.PUBLIC,
+          // Note: mapPublicIpOnLaunch will be disabled at subnet level below
         },
       ],
+    });
+
+    // Add IPv6 CIDR block to VPC
+    const ipv6CidrBlock = new ec2.CfnVPCCidrBlock(this, 'VpcIpv6CidrBlock', {
+      vpcId: this.vpc.vpcId,
+      amazonProvidedIpv6CidrBlock: true,
+    });
+
+    // Configure subnets with IPv6 and disable automatic IPv4 public IP assignment
+    this.vpc.publicSubnets.forEach((subnet, index) => {
+      const cfnSubnet = subnet.node.defaultChild as ec2.CfnSubnet;
+
+      // Add IPv6 CIDR block to subnet
+      cfnSubnet.ipv6CidrBlock = cdk.Fn.select(index, cdk.Fn.cidr(
+        cdk.Fn.select(0, this.vpc.vpcIpv6CidrBlocks),
+        256,
+        '64'
+      ));
+
+      // Enable IPv6 address assignment
+      cfnSubnet.assignIpv6AddressOnCreation = true;
+
+      // CRITICAL: Disable automatic IPv4 public IP assignment at subnet level
+      cfnSubnet.mapPublicIpOnLaunch = false;
+
+      cfnSubnet.addDependency(ipv6CidrBlock);
+    });
+
+    // Add IPv6 route to Internet Gateway
+    this.vpc.publicSubnets.forEach((subnet, index) => {
+      new ec2.CfnRoute(this, `Ipv6Route${index}`, {
+        routeTableId: subnet.routeTable.routeTableId,
+        destinationIpv6CidrBlock: '::/0',
+        gatewayId: this.vpc.internetGatewayId,
+      });
     });
 
     this.securityGroup = new ec2.SecurityGroup(this, 'VPNServerSecurityGroup', {
@@ -40,11 +78,18 @@ export class RegionHopInfrastructureStack extends cdk.Stack {
       securityGroupName: getResourceName('RegionHop', targetRegion) + '-SG',
     });
 
-    // Allow SSH access (port 22) for administration
+    // Allow SSH access (port 22) for administration - IPv4
     this.securityGroup.addIngressRule(
       ec2.Peer.anyIpv4(),
       ec2.Port.tcp(22),
-      'SSH access for server administration'
+      'SSH access for server administration (IPv4)'
+    );
+
+    // Allow SSH access (port 22) for administration - IPv6
+    this.securityGroup.addIngressRule(
+      ec2.Peer.anyIpv6(),
+      ec2.Port.tcp(22),
+      'SSH access for server administration (IPv6)'
     );
 
     // Allow WireGuard VPN traffic from anywhere on the internet
@@ -54,7 +99,14 @@ export class RegionHopInfrastructureStack extends cdk.Stack {
     this.securityGroup.addIngressRule(
       ec2.Peer.anyIpv4(),
       ec2.Port.udp(vpnPort),
-      `WireGuard VPN traffic on port ${vpnPort}`
+      `WireGuard VPN traffic on port ${vpnPort} (IPv4)`
+    );
+
+    // Allow WireGuard VPN traffic - IPv6
+    this.securityGroup.addIngressRule(
+      ec2.Peer.anyIpv6(),
+      ec2.Port.udp(vpnPort),
+      `WireGuard VPN traffic on port ${vpnPort} (IPv6)`
     );
 
     // Add resource tags for better management and cost tracking
