@@ -1,6 +1,7 @@
 {
   "defaultRegion": "eu-central-1",
-  "vpnSubnet": "10.8.0.0/24",
+  "vpnSubnetIpv4": "10.8.0.0/24",
+  "vpnSubnetIpv6": "fd42:42:42::/64",
   "vpnPort": 51820,
   "domain": "example.com",
   "dnsRecordTtl": 30,

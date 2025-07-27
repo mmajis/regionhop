@@ -111,7 +111,7 @@ Use the **`hop`** script to manage your RegionHop deployments:
 
 ```bash
 # Bootstrap CDK for target region (first-time only)
-cdk bootstrap --region eu-central-1
+npx cdk bootstrap --region eu-central-1
 
 # Set region environment variable
 export REGIONHOP_REGION=eu-central-1

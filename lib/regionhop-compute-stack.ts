@@ -11,7 +11,7 @@ import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
 import { RegionHopInfrastructureStack } from './regionhop-infrastructure-stack';
-import { getVpnSubnet, getVpnPort, getDomain, getHostedZoneId, getDnsRecordTtl, getVpnSubdomain, isDnsManagementEnabled } from './region-config';
+import { getVpnSubnetIpv4, getVpnSubnetIpv6, hasVpnSubnetIpv4, hasVpnSubnetIpv6, getVpnPort, getDomain, getHostedZoneId, getDnsRecordTtl, getVpnSubdomain, isDnsManagementEnabled } from './region-config';
 
 export interface RegionHopComputeStackProps extends cdk.StackProps {
   infrastructureStack: RegionHopInfrastructureStack;
@@ -36,10 +36,26 @@ export class RegionHopComputeStack extends cdk.Stack {
     );
 
     // Get VPN configuration from region config
-    const vpnSubnet = getVpnSubnet();
+    const vpnSubnetIpv4 = getVpnSubnetIpv4();
+    const vpnSubnetIpv6 = getVpnSubnetIpv6();
+    const hasIpv4 = hasVpnSubnetIpv4();
+    const hasIpv6 = hasVpnSubnetIpv6();
     const vpnPort = getVpnPort();
-    const vpnServerIP = vpnSubnet.replace('/24', '').replace(/\d+$/, '1'); // 10.8.0.1
-    const vpnSubnetBase = vpnSubnet.replace('/24', '').replace(/\.\d+$/, '.'); // 10.8.0.
+    
+    // Calculate IPv4 addresses if IPv4 subnet is configured
+    let vpnServerIpv4: string | undefined;
+    let vpnSubnetIpv4Base: string | undefined;
+    if (hasIpv4 && vpnSubnetIpv4) {
+      vpnServerIpv4 = vpnSubnetIpv4.replace('/24', '').replace(/\d+$/, '1'); // 10.8.0.1
+      vpnSubnetIpv4Base = vpnSubnetIpv4.replace('/24', '').replace(/\.\d+$/, '.'); // 10.8.0.
+    }
+    
+    // Calculate IPv6 addresses if IPv6 subnet is configured
+    let vpnServerIpv6: string | undefined;
+    if (hasIpv6 && vpnSubnetIpv6) {
+      // For IPv6, use ::1 as the server address within the subnet
+      vpnServerIpv6 = vpnSubnetIpv6.replace('/64', '1'); // fd42:42:42::1
+    }
 
     // Deploy server scripts to S3 bucket
     const s3Bucket = s3.Bucket.fromBucketName(this, 'StateBackupBucket', s3BucketName);
@@ -52,9 +68,8 @@ export class RegionHopComputeStack extends cdk.Stack {
       retainOnDelete: false, // Clean up on stack deletion
     });
 
-    // WireGuard server installation and configuration script
-    const userDataScript = ec2.UserData.forLinux();
-    userDataScript.addCommands(
+    // Build the user data commands array
+    const commands: string[] = [
       '#!/bin/bash',
       'set -e',
       '',
@@ -137,11 +152,46 @@ export class RegionHopComputeStack extends cdk.Stack {
       '    ',
       '    # Create WireGuard server configuration',
       '    printf "[Interface]\\n" > /etc/wireguard/wg0.conf',
-      '    printf "PrivateKey = \$(cat server_private_key)\\n" >> /etc/wireguard/wg0.conf',
-      `    printf "Address = ${vpnServerIP}/24\\n" >> /etc/wireguard/wg0.conf`,
-      `    printf "ListenPort = ${vpnPort}\\n" >> /etc/wireguard/wg0.conf`,
-      '    printf "PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o ens5 -j MASQUERADE\\n" >> /etc/wireguard/wg0.conf',
-      '    printf "PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o ens5 -j MASQUERADE\\n" >> /etc/wireguard/wg0.conf',
+      '    printf "PrivateKey = \$(cat server_private_key)\\n" >> /etc/wireguard/wg0.conf'
+    ];
+
+    // Build the Address line with IPv4 and/or IPv6 addresses
+    const addresses: string[] = [];
+    if (hasIpv4 && vpnServerIpv4) {
+      addresses.push(`${vpnServerIpv4}/24`);
+    }
+    if (hasIpv6 && vpnServerIpv6) {
+      addresses.push(`${vpnServerIpv6}/64`);
+    }
+    
+    // Add single Address line with comma-separated addresses
+    if (addresses.length > 0) {
+      commands.push(`    printf "Address = ${addresses.join(', ')}\\n" >> /etc/wireguard/wg0.conf`);
+    }
+
+    // Continue with common WireGuard configuration
+    commands.push(
+      `    printf "ListenPort = ${vpnPort}\\n" >> /etc/wireguard/wg0.conf`
+    );
+
+    // Add IPv4 firewall rules if enabled
+    if (hasIpv4) {
+      commands.push(
+        '    printf "PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o ens5 -j MASQUERADE\\n" >> /etc/wireguard/wg0.conf',
+        '    printf "PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o ens5 -j MASQUERADE\\n" >> /etc/wireguard/wg0.conf'
+      );
+    }
+
+    // Add IPv6 firewall rules if enabled
+    if (hasIpv6) {
+      commands.push(
+        '    printf "PostUp = ip6tables -A FORWARD -i wg0 -j ACCEPT; ip6tables -t nat -A POSTROUTING -o ens5 -j MASQUERADE\\n" >> /etc/wireguard/wg0.conf',
+        '    printf "PostDown = ip6tables -D FORWARD -i wg0 -j ACCEPT; ip6tables -t nat -D POSTROUTING -o ens5 -j MASQUERADE\\n" >> /etc/wireguard/wg0.conf'
+      );
+    }
+
+    // Continue with remaining commands
+    commands.push(
       'fi',
       '',
       '# Configure fail2ban for SSH protection',
@@ -181,14 +231,37 @@ export class RegionHopComputeStack extends cdk.Stack {
       `export AWS_REGION="${targetRegion}"`,
       '',
       '# VPN Configuration',
-      `export VPN_SUBNET_BASE="${vpnSubnetBase}"`,
-      `export VPN_SUBNET="${vpnSubnet}"`,
-      `export VPN_PORT="${vpnPort}"`,
-      ...(isDnsManagementEnabled() ? [
-        // Use DNS name when DNS management is enabled
-        `export SERVER_ENDPOINT="${getVpnSubdomain(targetRegion)}"`,
-      ] : [
-        // Use IPv6 if available, fallback to private IPv4
+      `export VPN_PORT="${vpnPort}"`
+    );
+
+    // Add IPv4 environment variables if enabled
+    if (hasIpv4 && vpnSubnetIpv4) {
+      commands.push(
+        `export VPN_SUBNET_IPV4="${vpnSubnetIpv4}"`,
+        `export VPN_SUBNET_IPV4_BASE="${vpnSubnetIpv4Base}"`,
+        `export VPN_SERVER_IPV4="${vpnServerIpv4}"`
+      );
+    }
+
+    // Add IPv6 environment variables if enabled
+    if (hasIpv6 && vpnSubnetIpv6) {
+      commands.push(
+        `export VPN_SUBNET_IPV6="${vpnSubnetIpv6}"`,
+        `export VPN_SERVER_IPV6="${vpnServerIpv6}"`
+      );
+    }
+
+    // Add subnet flags
+    commands.push(
+      `export HAS_IPV4_SUBNET="${hasIpv4}"`,
+      `export HAS_IPV6_SUBNET="${hasIpv6}"`
+    );
+
+    // Add server endpoint configuration
+    if (isDnsManagementEnabled()) {
+      commands.push(`export SERVER_ENDPOINT="${getVpnSubdomain(targetRegion)}"`);
+    } else {
+      commands.push(
         'TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" -s)',
         'SERVER_IPV6=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" -s http://169.254.169.254/latest/meta-data/ipv6 2>/dev/null || echo "")',
         'if [ -n "$SERVER_IPV6" ]; then',
@@ -196,8 +269,12 @@ export class RegionHopComputeStack extends cdk.Stack {
         'else',
         '    SERVER_PRIVATE_IP=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" -s http://169.254.169.254/latest/meta-data/local-ipv4)',
         '    export SERVER_ENDPOINT="$SERVER_PRIVATE_IP"',
-        'fi',
-      ]),
+        'fi'
+      );
+    }
+
+    // Finish the environment file and complete setup
+    commands.push(
       'EOF',
       '',
       '# Make scripts executable',
@@ -209,8 +286,12 @@ export class RegionHopComputeStack extends cdk.Stack {
       'echo "Server scripts deployed and configured successfully!"',
       'echo "Backup WireGuard configuration to S3..."',
       `aws s3 sync /etc/wireguard s3://${s3BucketName}/wireguard-config/ --region "${targetRegion}"`,
-      'echo "RegionHop VPN server setup completed!"',
+      'echo "RegionHop VPN server setup completed!"'
     );
+
+    // WireGuard server installation and configuration script
+    const userDataScript = ec2.UserData.forLinux();
+    userDataScript.addCommands(...commands);
 
     // Create Launch Template for spot instances
     const launchTemplate = new ec2.LaunchTemplate(this, 'WireGuardLaunchTemplate', {
@@ -243,6 +324,8 @@ export class RegionHopComputeStack extends cdk.Stack {
           DOMAIN_NAME: vpnDomain,
           HOSTED_ZONE_ID: getHostedZoneId() || '',
           DNS_RECORD_TTL: dnsRecordTtl.toString(),
+          HAS_IPV4_SUBNET: hasIpv4.toString(),
+          HAS_IPV6_SUBNET: hasIpv6.toString(),
         },
         timeout: cdk.Duration.minutes(5),
         memorySize: 256,

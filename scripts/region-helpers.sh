@@ -413,14 +413,6 @@ check_prerequisites() {
         missing_deps+=("jq")
     fi
 
-    if ! command_exists cdk; then
-        print_warning "AWS CDK not found. Installing globally..."
-        npm install -g aws-cdk
-        if [ $? -ne 0 ]; then
-            missing_deps+=("AWS CDK")
-        fi
-    fi
-
     if [ ${#missing_deps[@]} -gt 0 ]; then
         print_error "Missing dependencies: ${missing_deps[*]}"
         print_error "Please install the missing dependencies and try again."

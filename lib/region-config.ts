@@ -3,7 +3,8 @@ import * as path from 'path';
 
 export interface RegionConfig {
   defaultRegion: string;
-  vpnSubnet: string;
+  vpnSubnetIpv4?: string;
+  vpnSubnetIpv6?: string;
   vpnPort: number;
   domain?: string;
   hostedZoneId?: string;
@@ -25,7 +26,6 @@ function loadRegionConfig(): RegionConfig {
   return regionConfig!;
 }
 
-
 /**
  * Get the default region
  */
@@ -34,10 +34,33 @@ export function getDefaultRegion(): string {
 }
 
 /**
- * Get VPN subnet configuration
+ * Get VPN IPv4 subnet configuration
  */
-export function getVpnSubnet(): string {
-  return loadRegionConfig().vpnSubnet;
+export function getVpnSubnetIpv4(): string | undefined {
+  return loadRegionConfig().vpnSubnetIpv4;
+}
+
+/**
+ * Get VPN IPv6 subnet configuration
+ */
+export function getVpnSubnetIpv6(): string | undefined {
+  return loadRegionConfig().vpnSubnetIpv6;
+}
+
+/**
+ * Check if IPv4 VPN subnet is configured
+ */
+export function hasVpnSubnetIpv4(): boolean {
+  const ipv4Subnet = getVpnSubnetIpv4();
+  return ipv4Subnet !== undefined && ipv4Subnet !== null && ipv4Subnet.trim() !== '';
+}
+
+/**
+ * Check if IPv6 VPN subnet is configured
+ */
+export function hasVpnSubnetIpv6(): boolean {
+  const ipv6Subnet = getVpnSubnetIpv6();
+  return ipv6Subnet !== undefined && ipv6Subnet !== null && ipv6Subnet.trim() !== '';
 }
 
 /**
@@ -46,7 +69,6 @@ export function getVpnSubnet(): string {
 export function getVpnPort(): number {
   return loadRegionConfig().vpnPort;
 }
-
 
 /**
  * Get region from environment variable or default

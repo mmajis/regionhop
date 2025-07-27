@@ -2,7 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
-import { getExportName, getResourceName, getVpnPort } from './region-config';
+import { getExportName, getResourceName, getVpnPort, hasVpnSubnetIpv4, hasVpnSubnetIpv6 } from './region-config';
 
 export interface RegionHopInfrastructureStackProps extends cdk.StackProps {
   bucketAccessPolicyArn?: string;
@@ -19,6 +19,12 @@ export class RegionHopInfrastructureStack extends cdk.Stack {
 
     // Get the target region from the stack's environment
     const targetRegion = this.region;
+    
+    // Check which IP versions are configured
+    const hasIpv4 = hasVpnSubnetIpv4();
+    const hasIpv6 = hasVpnSubnetIpv6();
+    
+    console.log(`Infrastructure Stack - IPv4: ${hasIpv4}, IPv6: ${hasIpv6}`);
 
     // Create VPC with public subnet for VPN server
     this.vpc = new ec2.Vpc(this, 'VPC', {
@@ -35,79 +41,95 @@ export class RegionHopInfrastructureStack extends cdk.Stack {
       ],
     });
 
-    // Add IPv6 CIDR block to VPC
-    const ipv6CidrBlock = new ec2.CfnVPCCidrBlock(this, 'VpcIpv6CidrBlock', {
-      vpcId: this.vpc.vpcId,
-      amazonProvidedIpv6CidrBlock: true,
-    });
+    // Add IPv6 CIDR block to VPC only if IPv6 is configured
+    let ipv6CidrBlock: ec2.CfnVPCCidrBlock | undefined;
+    if (hasIpv6) {
+      ipv6CidrBlock = new ec2.CfnVPCCidrBlock(this, 'VpcIpv6CidrBlock', {
+        vpcId: this.vpc.vpcId,
+        amazonProvidedIpv6CidrBlock: true,
+      });
+    }
 
-    // Configure subnets with IPv6 and disable automatic IPv4 public IP assignment
+    // Configure subnets based on IP version requirements
     this.vpc.publicSubnets.forEach((subnet, index) => {
       const cfnSubnet = subnet.node.defaultChild as ec2.CfnSubnet;
 
-      // Add IPv6 CIDR block to subnet
-      cfnSubnet.ipv6CidrBlock = cdk.Fn.select(index, cdk.Fn.cidr(
-        cdk.Fn.select(0, this.vpc.vpcIpv6CidrBlocks),
-        256,
-        '64'
-      ));
+      // Configure IPv6 if enabled
+      if (hasIpv6 && ipv6CidrBlock) {
+        // Add IPv6 CIDR block to subnet
+        cfnSubnet.ipv6CidrBlock = cdk.Fn.select(index, cdk.Fn.cidr(
+          cdk.Fn.select(0, this.vpc.vpcIpv6CidrBlocks),
+          256,
+          '64'
+        ));
 
-      // Enable IPv6 address assignment
-      cfnSubnet.assignIpv6AddressOnCreation = true;
+        // Enable IPv6 address assignment
+        cfnSubnet.assignIpv6AddressOnCreation = true;
+        cfnSubnet.addDependency(ipv6CidrBlock);
+      }
 
-      // CRITICAL: Disable automatic IPv4 public IP assignment at subnet level
-      cfnSubnet.mapPublicIpOnLaunch = false;
-
-      cfnSubnet.addDependency(ipv6CidrBlock);
+      // Configure IPv4 public IP assignment based on IPv4 configuration
+      // If only IPv6 is enabled, disable IPv4 public IP assignment
+      // If IPv4 is enabled (with or without IPv6), enable IPv4 public IP assignment
+      cfnSubnet.mapPublicIpOnLaunch = hasIpv4;
     });
 
-    // Add IPv6 route to Internet Gateway
-    this.vpc.publicSubnets.forEach((subnet, index) => {
-      new ec2.CfnRoute(this, `Ipv6Route${index}`, {
-        routeTableId: subnet.routeTable.routeTableId,
-        destinationIpv6CidrBlock: '::/0',
-        gatewayId: this.vpc.internetGatewayId,
+    // Add IPv6 route to Internet Gateway only if IPv6 is configured
+    if (hasIpv6) {
+      this.vpc.publicSubnets.forEach((subnet, index) => {
+        new ec2.CfnRoute(this, `Ipv6Route${index}`, {
+          routeTableId: subnet.routeTable.routeTableId,
+          destinationIpv6CidrBlock: '::/0',
+          gatewayId: this.vpc.internetGatewayId,
+        });
       });
-    });
+    }
 
     this.securityGroup = new ec2.SecurityGroup(this, 'VPNServerSecurityGroup', {
       vpc: this.vpc,
       description: `Security group for RegionHop VPN server - ${targetRegion}`,
       allowAllOutbound: true,
-      allowAllIpv6Outbound: true,
+      allowAllIpv6Outbound: hasIpv6, // Only allow IPv6 outbound if IPv6 is configured
       securityGroupName: getResourceName('RegionHop', targetRegion) + '-SG',
     });
 
-    // Allow SSH access (port 22) for administration - IPv4
-    this.securityGroup.addIngressRule(
-      ec2.Peer.anyIpv4(),
-      ec2.Port.tcp(22),
-      'SSH access for server administration (IPv4)'
-    );
-
-    // Allow SSH access (port 22) for administration - IPv6
-    this.securityGroup.addIngressRule(
-      ec2.Peer.anyIpv6(),
-      ec2.Port.tcp(22),
-      'SSH access for server administration (IPv6)'
-    );
-
-    // Allow WireGuard VPN traffic from anywhere on the internet
-    // Security Note: WireGuard uses strong cryptographic authentication,
-    // making it safe to expose to 0.0.0.0/0. Only authenticated peers can connect.
     const vpnPort = this.getValidatedVpnPort();
-    this.securityGroup.addIngressRule(
-      ec2.Peer.anyIpv4(),
-      ec2.Port.udp(vpnPort),
-      `WireGuard VPN traffic on port ${vpnPort} (IPv4)`
-    );
 
-    // Allow WireGuard VPN traffic - IPv6
-    this.securityGroup.addIngressRule(
-      ec2.Peer.anyIpv6(),
-      ec2.Port.udp(vpnPort),
-      `WireGuard VPN traffic on port ${vpnPort} (IPv6)`
-    );
+    // Add IPv4 rules only if IPv4 is configured
+    if (hasIpv4) {
+      // Allow SSH access (port 22) for administration - IPv4
+      this.securityGroup.addIngressRule(
+        ec2.Peer.anyIpv4(),
+        ec2.Port.tcp(22),
+        'SSH access for server administration (IPv4)'
+      );
+
+      // Allow WireGuard VPN traffic - IPv4
+      // Security Note: WireGuard uses strong cryptographic authentication,
+      // making it safe to expose to 0.0.0.0/0. Only authenticated peers can connect.
+      this.securityGroup.addIngressRule(
+        ec2.Peer.anyIpv4(),
+        ec2.Port.udp(vpnPort),
+        `WireGuard VPN traffic on port ${vpnPort} (IPv4)`
+      );
+    }
+
+    // Add IPv6 rules only if IPv6 is configured
+    if (hasIpv6) {
+      // Allow SSH access (port 22) for administration - IPv6
+      this.securityGroup.addIngressRule(
+        ec2.Peer.anyIpv6(),
+        ec2.Port.tcp(22),
+        'SSH access for server administration (IPv6)'
+      );
+
+      // Allow WireGuard VPN traffic - IPv6
+      this.securityGroup.addIngressRule(
+        ec2.Peer.anyIpv6(),
+        ec2.Port.udp(vpnPort),
+        `WireGuard VPN traffic on port ${vpnPort} (IPv6)`
+      );
+    }
 
     // Add resource tags for better management and cost tracking
     cdk.Tags.of(this.securityGroup).add('Purpose', 'RegionHop-VPN');
