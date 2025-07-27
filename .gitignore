@@ -3,6 +3,10 @@
 *.d.ts
 node_modules
 
+# Ignore cdk.context.json
+# This is against CDK best practices, but don't want to commit account-specific context in this case.
+cdk.context.json
+
 # CDK asset staging directory
 .cdk.staging
 cdk.out
