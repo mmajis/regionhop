@@ -17,7 +17,7 @@ let regionConfig: RegionConfig | null = null;
 /**
  * Load region configuration from config.json
  */
-function loadRegionConfig(): RegionConfig {
+function loadJsonConfig(): RegionConfig {
   if (!regionConfig) {
     const configPath = path.join(__dirname, '..', 'config.json');
     const configData = fs.readFileSync(configPath, 'utf8');
@@ -30,21 +30,29 @@ function loadRegionConfig(): RegionConfig {
  * Get the default region
  */
 export function getDefaultRegion(): string {
-  return loadRegionConfig().defaultRegion;
+  return loadJsonConfig().defaultRegion;
 }
 
 /**
  * Get VPN IPv4 subnet configuration
  */
 export function getVpnSubnetIpv4(): string | undefined {
-  return loadRegionConfig().vpnSubnetIpv4;
+  const envSubnetIpv4 = process.env.REGIONHOP_SUBNET_IPV4;
+  if (envSubnetIpv4) {
+    return envSubnetIpv4;
+  }
+  return loadJsonConfig().vpnSubnetIpv4;
 }
 
 /**
  * Get VPN IPv6 subnet configuration
  */
 export function getVpnSubnetIpv6(): string | undefined {
-  return loadRegionConfig().vpnSubnetIpv6;
+  const envSubnetIpv6 = process.env.REGIONHOP_SUBNET_IPV6;
+  if (envSubnetIpv6) {
+    return envSubnetIpv6;
+  }
+  return loadJsonConfig().vpnSubnetIpv6;
 }
 
 /**
@@ -67,7 +75,7 @@ export function hasVpnSubnetIpv6(): boolean {
  * Get VPN port configuration
  */
 export function getVpnPort(): number {
-  return loadRegionConfig().vpnPort;
+  return loadJsonConfig().vpnPort;
 }
 
 /**
@@ -113,7 +121,7 @@ export function getDomain(): string | undefined {
     return envDomain;
   }
 
-  const config = loadRegionConfig();
+  const config = loadJsonConfig();
   return config.domain;
 }
 
@@ -126,7 +134,7 @@ export function getHostedZoneId(): string | undefined {
     return envHostedZoneId;
   }
 
-  const config = loadRegionConfig();
+  const config = loadJsonConfig();
   return config.hostedZoneId;
 }
 
@@ -139,7 +147,7 @@ export function getDnsRecordTtl(): number {
     return parseInt(envTtl, 10);
   }
 
-  const config = loadRegionConfig();
+  const config = loadJsonConfig();
   return config.dnsRecordTtl || 30; // Default 30 seconds for quick failover
 }
 
@@ -176,6 +184,6 @@ export function getDeploymentId(): string {
     return envDeploymentId;
   }
 
-  const config = loadRegionConfig();
+  const config = loadJsonConfig();
   return config.deploymentId || 'default';
 }
