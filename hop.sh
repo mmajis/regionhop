@@ -522,7 +522,7 @@ cmd_download_client() {
         if ! ssh -i "$key_file" ubuntu@"$server_ip" \
             "sudo test -d /etc/wireguard/clients/$client_name" 2>/dev/null; then
             print_error "Client '$client_name' does not exist in region $region"
-            print_status "Use 'hop list-clients $region' to see available clients"
+            print_error "Use 'hop list-clients $region' to see available clients"
             return 1
         fi
 
@@ -531,16 +531,23 @@ cmd_download_client() {
         if ssh -i "$key_file" ubuntu@"$server_ip" \
             "sudo cat /etc/wireguard/clients/$client_name/$client_name.conf" > "$config_file"; then
             print_success "Client configuration saved as $config_file"
-            echo
-            print_status "To import to WireGuard app:"
-            echo "1. Open WireGuard app"
-            echo "2. Click 'Import tunnel(s) from file'"
-            echo "3. Select the $config_file file"
-            echo "4. Click 'Import' and then toggle to connect"
         else
             print_error "Failed to download client configuration for '$client_name'"
             return 1
         fi
+        if ssh -i "$key_file" ubuntu@"$server_ip" \
+            "sudo cat /etc/wireguard/clients/$client_name/$client_name.conf.qr" > "${config_file}.qr"; then
+            print_success "QR Code for client configuration saved as ${config_file}.qr"
+        else
+            print_error "Failed to download QR code for '$client_name'"
+            return 1
+        fi
+        echo
+        print_status "To import to WireGuard app scan the QR code or:"
+        echo "1. Open WireGuard app"
+        echo "2. Click 'Import tunnel(s) from file'"
+        echo "3. Select the $config_file file"
+        echo "4. Click 'Import' and then toggle to connect"
     fi
 }
 
@@ -591,9 +598,13 @@ cmd_add_client() {
         local config_file="client-configs/${client_name}-${region}.conf"
         ssh -i "$key_file" ubuntu@"$server_ip" \
             "sudo cat /etc/wireguard/clients/$client_name/$client_name.conf" > "$config_file"
-
         if [ $? -eq 0 ]; then
             print_success "Client configuration saved as $config_file"
+        fi
+        ssh -i "$key_file" ubuntu@"$server_ip" \
+            "sudo cat /etc/wireguard/clients/$client_name/$client_name.conf.qr" > "${config_file}.qr"
+        if [ $? -eq 0 ]; then
+            print_success "QR Code for client configuration saved as ${config_file}.qr"
         fi
     else
         print_error "Failed to add client to region $region"
@@ -675,6 +686,7 @@ cmd_remove_client() {
         if [ -f "$config_file" ]; then
             print_status "Removing local configuration file: $config_file"
             rm -f "$config_file"
+            rm -f "${config_file}.qr"
         fi
     else
         print_error "Failed to remove client '$client_name' from region $region"

@@ -155,8 +155,9 @@ systemctl restart wg-quick@wg0
 
 echo "Client $CLIENT_NAME created successfully!"
 echo "Configuration file: $CLIENT_DIR/${CLIENT_NAME}.conf"
+qrencode -t ansiutf8 < $CLIENT_DIR/${CLIENT_NAME}.conf > "$CLIENT_DIR/${CLIENT_NAME}.conf.qr"
 echo "QR Code:"
-qrencode -t ansiutf8 < $CLIENT_DIR/${CLIENT_NAME}.conf
+cat "$CLIENT_DIR/${CLIENT_NAME}.conf.qr"
 
 # Backup updated configuration to S3
 aws s3 sync /etc/wireguard s3://$S3_BUCKET/wireguard-config/ --exclude "*.tmp" --region $AWS_REGION
