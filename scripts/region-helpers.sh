@@ -159,8 +159,7 @@ get_vpn_server_ip() {
     else 
         # DNS management is not enabled, query the IP from the instance found based it being tagged with the stack name
         # Get instance details in one API call - only running instances
-        local instance_data=$(aws ec2 describe-instances --region "$region" --filters "Name=tag:aws:cloudformation:stack-name,Values=$compute_stack" "Name=instance-state-name,Values=running" --query "Reservations[].Instances[].[PublicIpAddress,Ipv6Addresses[0].Ipv6Address]" --output text 2>/dev/null)
-        
+        local instance_data=$(aws ec2 describe-instances --region "$region" --filters "Name=tag:aws:cloudformation:stack-name,Values=$compute_stack" "Name=instance-state-name,Values=running" --query "Reservations[].Instances[].[PublicIpAddress,Ipv6Address]" --output text 2>/dev/null)
         if [ -n "$instance_data" ]; then
             # Parse the result - first column is IPv4, second is IPv6
             local instance_public_ip=$(echo "$instance_data" | awk '{print $1}')

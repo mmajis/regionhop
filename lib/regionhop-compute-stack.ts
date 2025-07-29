@@ -283,12 +283,12 @@ export class RegionHopComputeStack extends cdk.Stack {
     } else {
       commands.push(
         'TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" -s)',
-        'SERVER_IPV6=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" -s http://169.254.169.254/latest/meta-data/ipv6 2>/dev/null || echo "")',
-        'if [ -n "$SERVER_IPV6" ]; then',
-        '    export SERVER_ENDPOINT="[$SERVER_IPV6]"  # IPv6 needs brackets',
+        'SERVER_IPV4=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" -s http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || echo "")',
+        'if [ -n "$SERVER_IPV4" ]; then',
+        '    export SERVER_ENDPOINT="$SERVER_IPV4"',
         'else',
-        '    SERVER_PRIVATE_IP=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" -s http://169.254.169.254/latest/meta-data/local-ipv4)',
-        '    export SERVER_ENDPOINT="$SERVER_PRIVATE_IP"',
+        '    SERVER_IPV6=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" -s http://169.254.169.254/latest/meta-data/ipv6)',
+        '    export SERVER_ENDPOINT="[$SERVER_IPV6]"  # IPv6 needs brackets',
         'fi'
       );
     }
