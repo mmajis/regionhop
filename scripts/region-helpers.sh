@@ -156,6 +156,30 @@ get_vpn_server_ip() {
         # If DNS resolution failed, return the DNS name itself
         echo "$dns_domain"
         return 0
+    else 
+        # DNS management is not enabled, query the IP from the instance found based it being tagged with the stack name
+        # Get instance details in one API call - only running instances
+        local instance_data=$(aws ec2 describe-instances --region "$region" --filters "Name=tag:aws:cloudformation:stack-name,Values=$compute_stack" "Name=instance-state-name,Values=running" --query "Reservations[].Instances[].[PublicIpAddress,Ipv6Addresses[0].Ipv6Address]" --output text 2>/dev/null)
+        
+        if [ -n "$instance_data" ]; then
+            # Parse the result - first column is IPv4, second is IPv6
+            local instance_public_ip=$(echo "$instance_data" | awk '{print $1}')
+            local instance_public_ipv6=$(echo "$instance_data" | awk '{print $2}')
+            
+            # Try IPv4 first (preferred)
+            if [ -n "$instance_public_ip" ] && [ "$instance_public_ip" != "None" ] && [[ "$instance_public_ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                echo "$instance_public_ip"
+                return 0
+            fi
+            
+            # If no IPv4, try IPv6
+            if [ -n "$instance_public_ipv6" ] && [ "$instance_public_ipv6" != "None" ] && [[ "$instance_public_ipv6" =~ ^[0-9a-fA-F:]+$ ]]; then
+                echo "$instance_public_ipv6"
+                return 0
+            fi
+        fi
+        print_error "Could not retrieve VPN server IP for region $region"
+        return 1
     fi
 }
 
