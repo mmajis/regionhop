@@ -326,15 +326,15 @@ cmd_ssh() {
     fi
 
     # Check if region is deployed
-    local infra_stack=$(get_stack_name "Infrastructure" "$region")
-    local compute_stack=$(get_stack_name "Compute" "$region")
+    # local infra_stack=$(get_stack_name "Infrastructure" "$region")
+    # local compute_stack=$(get_stack_name "Compute" "$region")
 
-    if ! stack_exists "$infra_stack" "$region" || ! stack_exists "$compute_stack" "$region"; then
-        print_error "VPN service is not deployed in region $region"
-        print_status "Available regions:"
-        list_deployed_regions 2>/dev/null || print_warning "No regions deployed"
-        return 1
-    fi
+    # if ! stack_exists "$infra_stack" "$region" || ! stack_exists "$compute_stack" "$region"; then
+    #     print_error "VPN service is not deployed in region $region"
+    #     print_status "Available regions:"
+    #     list_deployed_regions 2>/dev/null || print_warning "No regions deployed"
+    #     return 1
+    # fi
 
     local server_ip=$(get_vpn_server_ip "$region")
     if [ -z "$server_ip" ] || [ "$server_ip" = "null" ]; then
